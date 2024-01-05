@@ -7,6 +7,13 @@
 
 #include <string>
 #include <vector>
+#include <sstream>
+
+
+#define PORT 8081
+#define BUFFER_SIZE 1024
+#define MAX_CLIENTS 10
+
 
 class Server {
 
@@ -15,6 +22,13 @@ public:
     std::vector<std::string> list_files(std::string directory);
     std::vector<std::string> list_processes(std::string directory);
 
+};
+
+
+class ServerHandler {
+public:
+    static void* handle_client(void* client_socket_ptr);
+    static void run_server();
 };
 
 
