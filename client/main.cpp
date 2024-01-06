@@ -13,7 +13,7 @@ int main() {
 
 
     // Примеры запросов
-    // const auto upload_request = "POST /upload HTTP/1.1\r\nHost: server_ip:port\r\nContent-Length: file_size\r\n\r\n[Binary file data]";
+    // const auto upload_request = "GET /download?filename=FILE1.txt HTTP/1.1\r\n\r\n";
     // const auto list_files_request = "GET /list_files HTTP/1.1\r\nHost: server_ip:port\r\n\r\n";
     // const auto list_processes_request = "GET /list_processes HTTP/1.1\r\nHost: server_ip:port\r\n\r\n";
     //

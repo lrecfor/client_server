@@ -9,12 +9,40 @@
 #include <arpa/inet.h>
 #include <sys/poll.h>
 #include <pthread.h>
+#include <fstream>
 
 #include "server.h"
 
-bool Server::upload_files(std::string filename) {
+
+bool Server::send_text(const std::string& filename, int client_socket) {
+    // Логика отправки текста
+    std::ifstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "Error opening file: " << filename << std::endl;
+        return false;
+    }
+
+    // Определение размера файла
+    file.seekg(0, std::ios::end);
+    std::streampos file_size = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    // Отправка заголовка с информацией о размере файла
+    std::ostringstream header;
+    header << "HTTP/1.1 200 OK\r\nContent-Length: " << file_size << "\r\n\r\n";
+    send(client_socket, header.str().c_str(), header.str().length(), 0);
+
+    // Отправка содержимого файла
+    while (!file.eof()) {
+        char buffer[BUFFER_SIZE];
+        file.read(buffer, BUFFER_SIZE);
+        send(client_socket, buffer, file.gcount(), 0);
+    }
+
+    file.close();
     return true;
 }
+
 
 std::vector<std::string> Server::list_files(std::string directory) {
     return std::vector<std::string>({"first, second"});
@@ -51,14 +79,31 @@ void* ServerHandler::handle_client(void* client_socket_ptr) {
         // Обработка запроса в зависимости от протокола
         std::string response_message;
 
-        if (strncmp(buffer, "POST /upload", 12) == 0) {
-            // Логика обработки загрузки файла
-            std::cout << buffer << "\n";
-            std::cout << "Handling file upload...\n";
-            if (server.upload_files("filename")) {
-                response_message = "HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nUpload OK";
+        if (strncmp(buffer, "GET /download", 13) == 0) {
+            std::cout << "Handling file download...\n";
+
+            // Получаем имя файла из запроса (пример: GET /download?filename=myfile.txt)
+            std::string filename;
+            size_t pos = std::string(buffer).find("filename=");
+            if (pos != std::string::npos) {
+                // Найден "filename=", теперь нужно найти конец имени файла (первый пробел или конец строки)
+                size_t end_pos = std::string(buffer).find_first_of(" \r\n", pos + 9);
+                if (end_pos != std::string::npos) {
+                    filename = std::string(buffer).substr(pos + 9, end_pos - pos - 9);
+                } else {
+                    // Если конец строки не найден, считаем, что имя файла занимает оставшуюся часть строки
+                    filename = std::string(buffer).substr(pos + 9);
+                }
+            }
+
+            if (!filename.empty()) {
+                if (server.send_text(PATH + filename, client_socket)) {
+                    std::cout << "File downloaded successfully.\n";
+                } else {
+                    std::cerr << "Error downloading file.\n";
+                }
             } else {
-                response_message = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 23\r\n\r\nUpload failed";
+                std::cerr << "Invalid download request.\n";
             }
         } else if (strncmp(buffer, "GET /list_files", 15) == 0) {
             // Логика обработки запроса листинга файлов
