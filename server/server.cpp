@@ -10,39 +10,99 @@
 #include <sys/poll.h>
 #include <pthread.h>
 #include <fstream>
+#include <unistd.h>
 
 #include "server.h"
 
 
 bool Server::send_text(const std::string& filename, int client_socket) {
-    // Логика отправки текста
     std::ifstream file(filename, std::ios::binary);
     if (!file.is_open()) {
         std::cerr << "Error opening file: " << filename << std::endl;
         return false;
     }
 
-    // Определение размера файла
+    // Находим размер файла
     file.seekg(0, std::ios::end);
     std::streampos file_size = file.tellg();
     file.seekg(0, std::ios::beg);
 
-    // Отправка заголовка с информацией о размере файла
     std::ostringstream header;
     header << "HTTP/1.1 200 OK\r\nContent-Length: " << file_size << "\r\n\r\n";
-    send(client_socket, header.str().c_str(), header.str().length(), 0);
 
-    // Отправка содержимого файла
+    // Отправляем заголовочник с размером файла
+    if (send_all(client_socket, header.str().c_str(), header.str().length()) == -1) {
+        std::cerr << "Error sending header to client" << std::endl;
+        file.close();
+        return false;
+    }
+
+    // Получаем подтверждение о доставке пакета
+    if (!receive_confirmation(client_socket)) {
+        std::cerr << "Error receiving confirmation from client" << std::endl;
+        file.close();
+        return false;
+    }
+
     while (!file.eof()) {
-        char buffer[BUFFER_SIZE];
-        file.read(buffer, BUFFER_SIZE);
-        send(client_socket, buffer, file.gcount(), 0);
+        constexpr std::streamsize buffer_size = BUFFER_SIZE;
+        char buffer[buffer_size];
+        file.read(buffer, buffer_size);
+
+        if (send_all(client_socket, buffer, file.gcount()) == -1) {
+            std::cerr << "Error sending file content to client" << std::endl;
+            file.close();
+            return false;
+        }
+
+        // Ожидание подтверждения от клиента
+        if (!receive_confirmation(client_socket)) {
+            std::cerr << "Error receiving confirmation from client" << std::endl;
+            file.close();
+            return false;
+        }
     }
 
     file.close();
     return true;
 }
 
+bool Server::receive_confirmation(const int client_socket) {
+    char confirmation_message[10];
+    const ssize_t bytes_received = recv(client_socket, confirmation_message, sizeof(confirmation_message), 0);
+
+    if (bytes_received <= 0) {
+        return false;  // Ошибка при получении подтверждения
+    }
+
+    confirmation_message[bytes_received] = '\0';
+
+    // Проверка подтверждения от клиента
+    if (std::string(confirmation_message) != "ACK") {
+        return false;  // Некорректное подтверждение
+    }
+
+    return true;
+}
+
+// Функция для отправки всех данных из буфера
+ssize_t Server::send_all(const int socket, const void* buffer, const size_t length) {
+    const auto buffer_ptr = static_cast<const char*>(buffer);
+    ssize_t total_sent = 0;
+
+    while (total_sent < length) {
+        const ssize_t sent = send(socket, buffer_ptr + total_sent, length - total_sent, 0);
+        if (sent == -1) {
+            return -1;  // Ошибка отправки
+        }
+
+        total_sent += sent;
+    }
+
+    std::cout << "Total sent: " << total_sent << std::endl;
+
+    return total_sent;
+}
 
 std::vector<std::string> Server::list_files(std::string directory) {
     return std::vector<std::string>({"first, second"});
@@ -84,11 +144,9 @@ void* ServerHandler::handle_client(void* client_socket_ptr) {
 
             // Получаем имя файла из запроса (пример: GET /download?filename=myfile.txt)
             std::string filename;
-            size_t pos = std::string(buffer).find("filename=");
-            if (pos != std::string::npos) {
+            if (size_t pos = std::string(buffer).find("filename="); pos != std::string::npos) {
                 // Найден "filename=", теперь нужно найти конец имени файла (первый пробел или конец строки)
-                size_t end_pos = std::string(buffer).find_first_of(" \r\n", pos + 9);
-                if (end_pos != std::string::npos) {
+                if (size_t end_pos = std::string(buffer).find_first_of(" \r\n", pos + 9); end_pos != std::string::npos) {
                     filename = std::string(buffer).substr(pos + 9, end_pos - pos - 9);
                 } else {
                     // Если конец строки не найден, считаем, что имя файла занимает оставшуюся часть строки

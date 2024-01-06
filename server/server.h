@@ -10,7 +10,7 @@
 #include <sstream>
 
 
-#define PORT 8080
+#define PORT 8081
 #define BUFFER_SIZE 1024
 #define MAX_CLIENTS 10
 #define PATH "SERVER_/"
@@ -20,6 +20,9 @@ class Server {
 
 public:
     static bool send_text(const std::string& filename, int client_socket);
+
+    static bool receive_confirmation(int client_socket);
+
     static ssize_t send_all(int socket, const void* buffer, size_t length);
     std::vector<std::string> list_files(std::string directory);
     std::vector<std::string> list_processes(std::string directory);
