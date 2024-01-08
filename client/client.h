@@ -14,11 +14,11 @@
 #include <vector>
 #include <algorithm>
 
+#include "../utils.h"
 
-#define SERVER_IP "127.0.0.1"
-#define PORT 8081
-#define BUFFER_SIZE 1024
+
 #define PATH "CLIENT_/"
+
 
 class Client {
 public:
@@ -62,7 +62,19 @@ public:
             // Если отправлен запрос на загрузку файла, извлекаем имя файла и отправляем
             if (strncmp(request, "GET /download", 13) == 0) {
                 std::string filename = extract_filename_from_request(request);
-                receive_and_save_file(filename, client_socket);
+                Utiliter::receive_and_save_file(std::string(PATH) + filename, client_socket);
+            } else if (strncmp(request, "POST /upload", 12) == 0) {
+                std::string filename = extract_filename_from_request(request);
+
+                if (!filename.empty()) {
+                    if (Utiliter::send_text(std::string(PATH) + filename, client_socket)) {
+                        std::cout << "File uploaded successfully.\n";
+                    } else {
+                        std::cerr << "Error uploading file.\n";
+                    }
+                } else {
+                    std::cerr << "Invalid upload request.\n";
+                }
             } else {
                 // Получение ответа от сервера (может потребоваться в зависимости от вашей логики)
                 char buffer[BUFFER_SIZE];
@@ -91,73 +103,7 @@ private:
                 return request_str.substr(filename_start, filename_end - filename_start);
             }
         }
-        return nullptr;
-    }
-
-    static void receive_and_save_file(const std::string& filename, int client_socket) {
-        std::ofstream received_file(std::string(PATH) + filename, std::ios::binary);
-        if (!received_file.is_open()) {
-            std::cerr << "Error creating " << filename << std::endl;
-            return;
-        }
-
-        // Получаем заголовочник с размером файла
-        char header[BUFFER_SIZE];
-        ssize_t header_received = recv(client_socket, header, BUFFER_SIZE, 0);
-
-        if (header_received <= 0) {
-            std::cerr << "Error receiving file header" << std::endl;
-            received_file.close();
-            return;
-        }
-
-        // Отправляем подтверждение серверу
-        send(client_socket, "ACK", 3, 0);
-
-        // Парсинг заголовочника, получаем размер файла
-        std::string header_str(header, header_received);
-        size_t content_length_pos = header_str.find("Content-Length:");
-
-        if (content_length_pos == std::string::npos) {
-            std::cerr << "Invalid file header" << std::endl;
-            received_file.close();
-            return;
-        }
-
-        size_t content_length_end = header_str.find("\r\n", content_length_pos);
-
-        if (content_length_end == std::string::npos) {
-            std::cerr << "Invalid file header" << std::endl;
-            received_file.close();
-            return;
-        }
-
-        std::string content_length_str = header_str.substr(content_length_pos + 15, content_length_end - (content_length_pos + 15));
-        size_t file_size = std::stoul(content_length_str);
-
-        // Цикл для загрущки файла
-        ssize_t bytes_received;
-        size_t total_bytes_received = 0;
-
-        while (total_bytes_received < file_size) {
-            char buffer[BUFFER_SIZE];
-            bytes_received = recv(client_socket, buffer, std::min<size_t>(BUFFER_SIZE, file_size - total_bytes_received), 0);
-
-            if (bytes_received <= 0) {
-                std::cerr << "Error receiving file content" << std::endl;
-                received_file.close();
-                return;
-            }
-
-            received_file.write(buffer, bytes_received);
-            total_bytes_received += bytes_received;
-
-            // Отправка подтверждения клиентом
-            send(client_socket, "ACK", 3, 0);
-        }
-
-        received_file.close();
-        std::cout << "File received and saved as " << filename << std::endl;
+        return "";
     }
 
 };

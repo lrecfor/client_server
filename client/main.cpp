@@ -12,18 +12,7 @@ int main() {
 }
 
     // Примеры запросов
-    // const auto upload_request = "GET /download?filename=FILE1.txt HTTP/1.1\r\n\r\n";
-    // const auto list_files_request = "GET /list_files HTTP/1.1\r\nHost: server_ip:port\r\n\r\n";
-    // const auto list_processes_request = "GET /list_processes HTTP/1.1\r\nHost: server_ip:port\r\n\r\n";
-    //
-    // // Отправка запросов
-    // std::cout << "Sending upload request...\n";
-    // Client::send_request(upload_request);
-    //
-    // std::cout << "Sending list files request...\n";
-    // Client::send_request(list_files_request);
-    //
-    // std::cout << "Sending list processes request...\n";
-    // Client::send_request(list_processes_request);
-    //
-    // return 0;
+    // "GET /download?filename=FILE1.txt HTTP/1.1\r\n\r\n";
+    // "GET /list_files HTTP/1.1\r\nHost: server_ip:port\r\n\r\n";
+    // "GET /list_processes HTTP/1.1\r\nHost: server_ip:port\r\n\r\n";
+    // "POST /upload?filename=PHOTO7878.jpg HTTP/1.1\r\n\r\n";

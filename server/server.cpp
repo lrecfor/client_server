@@ -10,102 +10,138 @@
 #include <sys/poll.h>
 #include <pthread.h>
 #include <fstream>
-#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/statvfs.h>
+#include <sys/types.h>
+#include <dirent.h>
+#include <cstdio>
+#include <ctime>
+#include <pwd.h>
+#include <grp.h>
+#include <string>
 
 #include "server.h"
+#include "../utils.cpp"
+#include "../utils.h"
 
 
-bool Server::send_text(const std::string& filename, int client_socket) {
-    std::ifstream file(filename, std::ios::binary);
-    if (!file.is_open()) {
-        std::cerr << "Error opening file: " << filename << std::endl;
-        return false;
+// static std::string getBinDir() {
+//     char buffer[1024];
+//     const ssize_t len = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
+//     if (len == -1) {
+//         perror("readlink /proc/self/exe failed");
+//         exit(-1);
+//     }
+//
+//     buffer[len] = '\0';
+//     auto binDir = std::string(buffer);
+//
+//     // Remove the binary filename from the path
+//     if (const size_t lastSlashPos = binDir.find_last_of('/'); lastSlashPos != std::string::npos) {
+//         binDir = binDir.substr(0, lastSlashPos);
+//     }
+//
+//     return binDir;
+// }
+
+std::string Server::list_files(std::string& path) {
+    DIR *thedirectory;
+    dirent *thefile;
+    struct stat thestat{};
+    passwd *tf;
+    group *gf;
+    struct statvfs vfs{};
+
+    off_t total_size = 0;
+
+    std::string result;
+    std::string server_path = "/mnt/c/Users/dana/uni/4course/sysprog2/pandora_box/client-server/server/bin/SERVER_/";
+
+    // If path is empty, use the current working directory (SERVER_DIR)
+    if (path.empty()) {
+        path = server_path;
+    } else {
+        path = server_path + "/" + path;
     }
 
-    // Находим размер файла
-    file.seekg(0, std::ios::end);
-    std::streampos file_size = file.tellg();
-    file.seekg(0, std::ios::beg);
-
-    std::ostringstream header;
-    header << "HTTP/1.1 200 OK\r\nContent-Length: " << file_size << "\r\n\r\n";
-
-    // Отправляем заголовочник с размером файла
-    if (send_all(client_socket, header.str().c_str(), header.str().length()) == -1) {
-        std::cerr << "Error sending header to client" << std::endl;
-        file.close();
-        return false;
+    // Get the block size
+    if (statvfs(path.c_str(), &vfs) == -1) {
+        perror("statvfs() error");
+        return "";
     }
 
-    // Получаем подтверждение о доставке пакета
-    if (!receive_confirmation(client_socket)) {
-        std::cerr << "Error receiving confirmation from client" << std::endl;
-        file.close();
-        return false;
-    }
+    thedirectory = opendir(path.c_str());
 
-    while (!file.eof()) {
-        constexpr std::streamsize buffer_size = BUFFER_SIZE;
-        char buffer[buffer_size];
-        file.read(buffer, buffer_size);
+    while((thefile = readdir(thedirectory)) != nullptr) {
+        char buf[512];
+        sprintf(buf, "%s/%s", path.c_str(), thefile->d_name);
+        lstat(buf, &thestat);
 
-        if (send_all(client_socket, buffer, file.gcount()) == -1) {
-            std::cerr << "Error sending file content to client" << std::endl;
-            file.close();
-            return false;
+        std::string link_result;
+        switch (thestat.st_mode & S_IFMT) {
+            case S_IFBLK: result += "b"; break;
+            case S_IFCHR: result += "c"; break;
+            case S_IFDIR: result += "d"; break;
+            case S_IFIFO: result += "p"; break;
+            case S_IFLNK: {
+                result += "l";
+                char link_target[1024];
+                if (const ssize_t len = readlink(buf, link_target, sizeof(link_target) - 1); len != -1) {
+                    link_target[len] = '\0';
+                    link_result += " -> ";
+                    link_result += link_target;
+                }
+                break;
+            }
+            case S_IFSOCK: result += "s"; break;
+            default:       result += "-"; break;
         }
 
-        // Ожидание подтверждения от клиента
-        if (!receive_confirmation(client_socket)) {
-            std::cerr << "Error receiving confirmation from client" << std::endl;
-            file.close();
-            return false;
-        }
+        result += (thestat.st_mode & S_IRUSR) ? "r" : "-";
+        result += (thestat.st_mode & S_IWUSR) ? "w" : "-";
+        result += (thestat.st_mode & S_IXUSR) ? "x" : "-";
+        result += (thestat.st_mode & S_IRGRP) ? "r" : "-";
+        result += (thestat.st_mode & S_IWGRP) ? "w" : "-";
+        result += (thestat.st_mode & S_IXGRP) ? "x" : "-";
+        result += (thestat.st_mode & S_IROTH) ? "r" : "-";
+        result += (thestat.st_mode & S_IWOTH) ? "w" : "-";
+        result += (thestat.st_mode & S_IXOTH) ? "x" : "-";
+
+        result += "\t";
+        result += std::to_string(thestat.st_nlink);
+
+        tf = getpwuid(thestat.st_uid);
+        result += "\t";
+        result += tf->pw_name;
+
+        gf = getgrgid(thestat.st_gid);
+        result += "\t";
+        result += gf->gr_name;
+
+        result += "\t";
+        result += std::to_string(thestat.st_size);
+
+        // Print the date in the format "Dec 13 11:55"
+        char date[20];
+        strftime(date, sizeof(date), "%b %d %H:%M", localtime(&thestat.st_mtime));
+        result += "\t";
+        result += date;
+
+        result += "\t";
+        result += thefile->d_name;
+        result += link_result;
+        result += "\n";
+
+        total_size += thestat.st_size;
     }
 
-    file.close();
-    return true;
-}
+    result += "\ntotal ";
+    result += std::to_string(total_size / vfs.f_bsize);
 
-bool Server::receive_confirmation(const int client_socket) {
-    char confirmation_message[10];
-    const ssize_t bytes_received = recv(client_socket, confirmation_message, sizeof(confirmation_message), 0);
+    closedir(thedirectory);
 
-    if (bytes_received <= 0) {
-        return false;  // Ошибка при получении подтверждения
-    }
-
-    confirmation_message[bytes_received] = '\0';
-
-    // Проверка подтверждения от клиента
-    if (std::string(confirmation_message) != "ACK") {
-        return false;  // Некорректное подтверждение
-    }
-
-    return true;
-}
-
-// Функция для отправки всех данных из буфера
-ssize_t Server::send_all(const int socket, const void* buffer, const size_t length) {
-    const auto buffer_ptr = static_cast<const char*>(buffer);
-    ssize_t total_sent = 0;
-
-    while (total_sent < length) {
-        const ssize_t sent = send(socket, buffer_ptr + total_sent, length - total_sent, 0);
-        if (sent == -1) {
-            return -1;  // Ошибка отправки
-        }
-
-        total_sent += sent;
-    }
-
-    std::cout << "Total sent: " << total_sent << std::endl;
-
-    return total_sent;
-}
-
-std::vector<std::string> Server::list_files(std::string directory) {
-    return std::vector<std::string>({"first, second"});
+    return result;
+    //return std::vector<std::string>({"first, second"});
 }
 
 std::vector<std::string> Server::list_processes(std::string directory) {
@@ -113,7 +149,7 @@ std::vector<std::string> Server::list_processes(std::string directory) {
 }
 
 void* ServerHandler::handle_client(void* client_socket_ptr) {
-    int client_socket = *static_cast<int *>(client_socket_ptr);
+    const int client_socket = *static_cast<int *>(client_socket_ptr);
     delete static_cast<int *>(client_socket_ptr);
 
     auto server = Server();
@@ -155,7 +191,7 @@ void* ServerHandler::handle_client(void* client_socket_ptr) {
             }
 
             if (!filename.empty()) {
-                if (server.send_text(PATH + filename, client_socket)) {
+                if (Utiliter::send_text(std::string(PATH) + filename, client_socket)) {
                     std::cout << "File downloaded successfully.\n";
                 } else {
                     std::cerr << "Error downloading file.\n";
@@ -166,15 +202,17 @@ void* ServerHandler::handle_client(void* client_socket_ptr) {
         } else if (strncmp(buffer, "GET /list_files", 15) == 0) {
             // Логика обработки запроса листинга файлов
             std::cout << "Handling list files request...\n";
-            std::vector<std::string> files_list = server.list_files("local");
+            std::string path = "";
+            auto files_list = server.list_files(path);
 
             // Преобразование вектора в строку
-            std::ostringstream ss;
-            for (const auto &file : files_list) {
-                ss << file << "\n";
-            }
+            // std::ostringstream ss;
+            // for (const auto &file : files_list) {
+            //     ss << file << "\n";
+            // }
 
-            response_message = "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(ss.str().length()) + "\r\n\r\n" + ss.str();
+            //response_message = "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(ss.str().length()) + "\r\n\r\n" + ss.str();
+            response_message = "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(files_list.size()) + "\r\n\r\n" + files_list;
         } else if (strncmp(buffer, "GET /list_processes", 19) == 0) {
             // Логика обработки запроса списка процессов
             std::cout << "Handling list processes request...\n";
@@ -187,6 +225,31 @@ void* ServerHandler::handle_client(void* client_socket_ptr) {
             }
 
             response_message = "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(ss.str().length()) + "\r\n\r\n" + ss.str();
+        } else if (strncmp(buffer, "POST /upload", 12) == 0) {
+            // Логика обработки запроса списка процессов
+            std::cout << "Handling file upload...\n";
+
+            // Получаем имя файла из запроса (пример: POST /upload?filename=myfile.txt)
+            std::string filename;
+            if (size_t pos = std::string(buffer).find("filename="); pos != std::string::npos) {
+                // Найден "filename=", теперь нужно найти конец имени файла (первый пробел или конец строки)
+                if (size_t end_pos = std::string(buffer).find_first_of(" \r\n", pos + 9); end_pos != std::string::npos) {
+                    filename = std::string(buffer).substr(pos + 9, end_pos - pos - 9);
+                } else {
+                    // Если конец строки не найден, считаем, что имя файла занимает оставшуюся часть строки
+                    filename = std::string(buffer).substr(pos + 9);
+                }
+            }
+
+            if (!filename.empty()) {
+                if (Utiliter::receive_and_save_file(std::string(PATH) + filename, client_socket)) {
+                    std::cout << "File downloaded successfully.\n";
+                } else {
+                    std::cerr << "Error downloading file.\n";
+                }
+            } else {
+                std::cerr << "Invalid download request.\n";
+            }
         } else {
             // Нераспознанный запрос
             response_message = "HTTP/1.1 400 Bad Request\r\nContent-Length: 15\r\n\r\nInvalid request.";
@@ -203,7 +266,7 @@ void* ServerHandler::handle_client(void* client_socket_ptr) {
 }
 
 void ServerHandler::run_server() {
-    sockaddr_in server_addr, client_addr;
+    sockaddr_in server_addr{}, client_addr{};
     socklen_t addr_len = sizeof(client_addr);
 
     // Создаем сокет
@@ -280,9 +343,8 @@ void ServerHandler::run_server() {
                 }
 
                 pthread_t client_thread;
-                int *client_socket_ptr = new int(client_socket);
 
-                if (pthread_create(&client_thread, nullptr, handle_client, (void*)client_socket_ptr) != 0) {
+                if (const auto client_socket_ptr = new int(client_socket); pthread_create(&client_thread, nullptr, handle_client, (void*)client_socket_ptr) != 0) {
                     perror("Error creating thread");
                     exit(EXIT_FAILURE);
                 }
@@ -297,5 +359,6 @@ void ServerHandler::run_server() {
     }
 
     // Закрываем серверный сокет
+    // ReSharper disable once CppDFAUnreachableCode
     close(server_socket);
 }
