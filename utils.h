@@ -7,25 +7,28 @@
 
 
 #define SERVER_IP "127.0.0.1"
-#define PORT 8082
+#define PORT 8081
 #define BUFFER_SIZE 1024
+#define MAX_CLIENTS 10
+#define PATH_S "SERVER_/"
+#define PATH_C "CLIENT_/"
 
 
 class Utiliter {
 public:
-    static bool send_text(const std::string& filename, int client_socket);
+    static std::string extractFilenameFromRequest(const char* request);
 
-    static bool receive_and_save_file(const std::string& filename, int client_socket);
+    static bool sendFile(const std::string& filename, int client_socket);
 
-    static void send_error(int socket, const std::string& error_message);
+    static bool receiveFile(const std::string& filename, int client_socket);
 
-    static bool receive_confirmation(int client_socket);
+private:
+    static bool receiveConfirmation(int client_socket);
+
+    static ssize_t sendAll(int socket, const void* buffer, size_t length);
 
     static std::string extractErrorMessage(const std::string& responseHeader);
-
-    static ssize_t send_all(int socket, const void* buffer, size_t length);
 };
-
 
 
 #endif //UTILS_H

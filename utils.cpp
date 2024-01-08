@@ -20,11 +20,26 @@
 #include "utils.h"
 
 
-bool Utiliter::send_text(const std::string& filename, int client_socket) {
+std::string Utiliter::extractFilenameFromRequest(const char* request) {
+    /*
+     * Получаем имя файла из запроса (пример: GET /download?filename=myfile.txt).
+     */
+    std::string filename;
+    if (const size_t pos = std::string(request).find("filename="); pos != std::string::npos) {
+        // Найден "filename=", теперь нужно найти конец имени файла (первый пробел или конец строки)
+        if (const size_t end_pos = std::string(request).find_first_of(" \r\n", pos + 9); end_pos != std::string::npos) {
+            return std::string(request).substr(pos + 9, end_pos - pos - 9);
+        }
+        // Если конец строки не найден, считаем, что имя файла занимает оставшуюся часть строки
+        return std::string(request).substr(pos + 9);
+    }
+    return "";
+}
+
+bool Utiliter::sendFile(const std::string& filename, int client_socket) {
     std::ifstream file(filename, std::ios::binary);
     if (!file.is_open()) {
         std::cerr << "Error opening file: " << filename << std::endl;
-        send_error(client_socket, "Error opening file");
         return false;
     }
 
@@ -37,19 +52,23 @@ bool Utiliter::send_text(const std::string& filename, int client_socket) {
     header << "HTTP/1.1 200 OK\r\nContent-Length: " << file_size << "\r\n\r\n";
 
     // Отправляем заголовочник с размером файла
-    if (send_all(client_socket, header.str().c_str(), header.str().length()) == -1) {
+    if (sendAll(client_socket, header.str().c_str(), header.str().length()) == -1) {
         std::cerr << "Error sending header" << std::endl;
-        send_error(client_socket, "Error sending header");
         file.close();
         return false;
     }
 
     // Получаем подтверждение о доставке пакета
-    if (!receive_confirmation(client_socket)) {
+    if (!receiveConfirmation(client_socket)) {
         std::cerr << "Error receiving confirmation" << std::endl;
-        send_error(client_socket, "Error receiving confirmation");
         file.close();
         return false;
+    }
+
+    if (file_size  == 0) {
+        std::cout << "File is empty" << std::endl;
+        file.close();
+        return true;
     }
 
     while (!file.eof()) {
@@ -57,17 +76,15 @@ bool Utiliter::send_text(const std::string& filename, int client_socket) {
         char buffer[buffer_size];
         file.read(buffer, buffer_size);
 
-        if (send_all(client_socket, buffer, file.gcount()) == -1) {
+        if (sendAll(client_socket, buffer, file.gcount()) == -1) {
             std::cerr << "Error sending file content" << std::endl;
-            send_error(client_socket, "Error sending file content");
             file.close();
             return false;
         }
 
         // Ожидание подтверждения от второй стороны
-        if (!receive_confirmation(client_socket)) {
+        if (!receiveConfirmation(client_socket)) {
             std::cerr << "Error receiving confirmation" << std::endl;
-            send_error(client_socket, "Error receiving confirmation");
             file.close();
             return false;
         }
@@ -77,22 +94,21 @@ bool Utiliter::send_text(const std::string& filename, int client_socket) {
     return true;
 }
 
-bool Utiliter::receive_and_save_file(const std::string& filename, int client_socket) {
+bool Utiliter::receiveFile(const std::string& filename, int client_socket) {
     // Получаем заголовочник с размером файла
     char header[BUFFER_SIZE];
     ssize_t header_received = recv(client_socket, header, BUFFER_SIZE, 0);
 
     if (header_received <= 0) {
         std::cerr << "Error receiving file header" << std::endl;
-        send_error(client_socket, "Error receiving file header");
         return false;
     }
 
     // Проверка на получение сообщения о возникновении ошибки
     std::string header_str(header, header_received);
-    if (strncmp(header_str.c_str(), "HTTP/1.1 500 Internal Server Error", 34) == 0 ) {
+    if (strncmp(header_str.c_str(), "HTTP/1.1 500 Internal Error", 27) == 0) {
         std::string error_message = extractErrorMessage(header_str);
-        std::cerr << "Server error message: " << error_message << std::endl;
+        std::cerr << error_message << std::endl;
         return false;
     }
 
@@ -103,7 +119,6 @@ bool Utiliter::receive_and_save_file(const std::string& filename, int client_soc
     std::ofstream received_file(filename, std::ios::binary);
     if (!received_file.is_open()) {
         std::cerr << "Error creating file" << filename << std::endl;
-        send_error(client_socket, "Error creating file");
         return false;
     }
 
@@ -113,7 +128,6 @@ bool Utiliter::receive_and_save_file(const std::string& filename, int client_soc
 
     if (content_length_pos == std::string::npos) {
         std::cerr << "Invalid file header" << std::endl;
-        send_error(client_socket, "Invalid file header");
         received_file.close();
         return false;
     }
@@ -122,12 +136,12 @@ bool Utiliter::receive_and_save_file(const std::string& filename, int client_soc
 
     if (content_length_end == std::string::npos) {
         std::cerr << "Invalid file header" << std::endl;
-        send_error(client_socket, "Invalid file header");
         received_file.close();
         return false;
     }
 
-    std::string content_length_str = header_str.substr(content_length_pos + 15, content_length_end - (content_length_pos + 15));
+    std::string content_length_str = header_str.substr(content_length_pos + 15,
+                                                       content_length_end - (content_length_pos + 15));
     size_t file_size = std::stoul(content_length_str); // Размер файла
 
     ssize_t bytes_received;
@@ -136,11 +150,11 @@ bool Utiliter::receive_and_save_file(const std::string& filename, int client_soc
     // Цикл для загрузки файла
     while (total_bytes_received < file_size) {
         char buffer[BUFFER_SIZE];
-        bytes_received = recv(client_socket, buffer, std::min<size_t>(BUFFER_SIZE, file_size - total_bytes_received), 0);
+        bytes_received = recv(client_socket, buffer, std::min<size_t>(BUFFER_SIZE, file_size - total_bytes_received),
+                              0);
 
         if (bytes_received <= 0) {
             std::cerr << "Error receiving file content" << std::endl;
-            send_error(client_socket, "Error receiving file content");
             received_file.close();
             return false;
         }
@@ -153,39 +167,36 @@ bool Utiliter::receive_and_save_file(const std::string& filename, int client_soc
     }
 
     received_file.close();
-    std::cout << "File received and saved as " << filename << std::endl;
     return true;
 }
 
-// Функция для отправки сообщения об ошибке
-void Utiliter::send_error(int socket, const std::string& error_message) {
-    std::ostringstream error_response;
-    error_response << "HTTP/1.1 500 Internal Server Error\r\nContent-Length: " << error_message.length() << "\r\n\r\n" << error_message;
-    send_all(socket, error_response.str().c_str(), error_response.str().length());
-}
-
-bool Utiliter::receive_confirmation(const int client_socket) {
+bool Utiliter::receiveConfirmation(const int client_socket) {
+    /*
+     * Функция для проверки получения подстверждения.
+     */
     char confirmation_message[10];
     const ssize_t bytes_received = recv(client_socket, confirmation_message, sizeof(confirmation_message), 0);
 
     if (bytes_received <= 0) {
-        return false;  // Ошибка при получении подтверждения
+        return false; // Ошибка при получении подтверждения
     }
 
     confirmation_message[bytes_received] = '\0';
 
-    // Проверка подтверждения от другой стороны
     if (std::string(confirmation_message) != "ACK") {
-        return false;  // Некорректное подтверждение
+        return false; // Некорректное подтверждение
     }
 
     return true;
 }
 
 std::string Utiliter::extractErrorMessage(const std::string& responseHeader) {
-    size_t errorPosition = responseHeader.find("\r\n\r\n");
+    /*
+     * Функция для извлечения текста ошибки из запроса.
+     */
 
-    if (errorPosition != std::string::npos && errorPosition + 4 < responseHeader.length()) {
+    if (const size_t errorPosition = responseHeader.find("\r\n\r\n");
+        errorPosition != std::string::npos && errorPosition + 4 < responseHeader.length()) {
         // Извлекаем текст ошибки
         return responseHeader.substr(errorPosition + 4);
     }
@@ -193,15 +204,17 @@ std::string Utiliter::extractErrorMessage(const std::string& responseHeader) {
     return "Ошибка не найдена.";
 }
 
-// Функция для отправки всех данных из буфера
-ssize_t Utiliter::send_all(const int socket, const void* buffer, const size_t length) {
-    const auto buffer_ptr = static_cast<const char*>(buffer);
+ssize_t Utiliter::sendAll(const int socket, const void* buffer, const size_t length) {
+    /*
+     * Функция для отправки всех данных из буфера.
+     */
+    const auto buffer_ptr = static_cast<const char *>(buffer);
     ssize_t total_sent = 0;
 
     while (total_sent < length) {
         const ssize_t sent = send(socket, buffer_ptr + total_sent, length - total_sent, 0);
         if (sent == -1) {
-            return -1;  // Ошибка отправки
+            return -1; // Ошибка отправки
         }
 
         total_sent += sent;
