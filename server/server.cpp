@@ -44,7 +44,10 @@
 //     return binDir;
 // }
 
-std::string Server::list_files(std::string& path) {
+std::string Server::list_files(std::string path) {
+    /*
+     * Функция для получения листинга файлов.
+     */
     DIR* thedirectory;
     dirent* thefile;
     struct stat thestat{};
@@ -149,7 +152,10 @@ std::string Server::list_files(std::string& path) {
     return result;
 }
 
-std::string Server::list_processes(std::string directory) {
+std::string Server::list_processes() {
+    /*
+     * Функция для получения списка процессов через файловую систему procfs (PID, путь до файла, аргументы, информация о файловых дескрипторах)
+     */
     return std::string();
 }
 
@@ -201,8 +207,7 @@ void* ServerHandler::handle_client(void* client_socket_ptr) {
         } else if (strncmp(buffer, "GET /list_files", 15) == 0) {
             // Логика обработки запроса листинга файлов
             std::cout << "Handling list files request...\n";
-            std::string path = "";
-            if (auto files_list = Server::list_files(path); !files_list.empty()) {
+            if (auto files_list = Server::list_files(""); !files_list.empty()) {
                 response_message = "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(files_list.size()) +
                                    "\r\n\r\n" +
                                    files_list;
@@ -213,7 +218,7 @@ void* ServerHandler::handle_client(void* client_socket_ptr) {
         } else if (strncmp(buffer, "GET /list_processes", 19) == 0) {
             // Логика обработки запроса списка процессов
             std::cout << "Handling list processes request...\n";
-            if (std::string processes_list = Server::list_processes("ps"); !processes_list.empty()) {
+            if (std::string processes_list = Server::list_processes(); !processes_list.empty()) {
                 response_message = "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(processes_list.size()) +
                                    "\r\n\r\n" + processes_list;
             } else {
@@ -241,7 +246,7 @@ void* ServerHandler::handle_client(void* client_socket_ptr) {
             response_message = "HTTP/1.1 400 Bad Request\r\nContent-Length: 15\r\n\r\nInvalid request.";
         }
 
-        // Отправляем ответ клиенту если response_message не пуста
+        // Отправляем ответ клиенту
         send(client_socket, response_message.c_str(), response_message.length(), 0);
     }
 

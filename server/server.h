@@ -11,9 +11,9 @@
 
 class Server {
 public:
-    static std::string list_files(std::string& path);
+    static std::string list_files(std::string path);
 
-    static std::string list_processes(std::string directory);
+    static std::string list_processes();
 };
 
 
