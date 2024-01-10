@@ -221,8 +221,9 @@ std::string Server::listProcesses() {
                     // Skip kernel threads
                     if (process.pid > 0) {
                         // Read the command from /proc/[PID]/cmdline
-                        getline(cmdlineFile, process.command);
-                        process.command = process.command.substr(0, 128);
+                        process.command = getCommandLine(process.pid).substr(0, 128);
+                        // getline(cmdlineFile, process.command);
+                        // process.command = process.command.substr(0, 128);
 
                         processes.push_back(process);
                     }
@@ -237,6 +238,44 @@ std::string Server::listProcesses() {
     }
 
     return getListProcessesOutput(processes);
+}
+
+std::string Server::getCommandLine(int pid) {
+    std::ostringstream path;
+    path << "/proc/" << pid << "/cmdline";
+
+    std::ifstream cmdlineFile(path.str());
+    if (!cmdlineFile.is_open()) {
+        // Ошибка при открытии файла
+        return {};
+    }
+
+    // Чтение содержимого файла (аргументы командной строки)
+    std::ostringstream cmdlineContent;
+    cmdlineContent << cmdlineFile.rdbuf();
+    cmdlineFile.close();
+
+    // Разделение аргументов
+    std::istringstream cmdlineStream(cmdlineContent.str());
+    std::vector<std::string> arguments;
+    std::string argument;
+
+    while (std::getline(cmdlineStream, argument, '\0')) {
+        arguments.push_back(argument);
+    }
+
+    std::string result;
+
+    if (!arguments.empty()) {
+        for (const auto& arg : arguments) {
+            result += arg;
+            result += " ";
+        }
+    } else {
+        std::cerr << "Error reading command line arguments for PID " << pid << std::endl;
+    }
+
+    return result;
 }
 
 bool Server::sendProcessList(const int clientSocket, const std::string& processesString) {

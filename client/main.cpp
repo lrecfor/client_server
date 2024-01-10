@@ -4,31 +4,30 @@
 
 #include "client.h"
 
-void fun() {
-    std::ifstream cFile("../config.cfg");
-    if (cFile.is_open()) {
-        std::string line;
-        while (getline(cFile, line)) {
-            line.erase(std::remove_if(line.begin(), line.end(), isspace),
-                       line.end());
-            if (line[0] == '#' || line.empty())
-                continue;
-            auto delimiterPos = line.find("=");
-            auto name = line.substr(0, delimiterPos);
-            auto value = line.substr(delimiterPos + 1);
-            std::cout << name << " " << value << '\n';
-        }
-    } else {
-        std::cerr << "Couldn't open config file for reading.\n";
-    }
-}
-
 
 int main() {
     Client::runClient();
 
     return 0;
 }
+
+// #include <iostream>
+//
+// int main(int argc, char *argv[]) {
+//     std::cout << "Number of command line arguments: " << argc << std::endl;
+//
+//     std::cout << "Command line arguments:" << std::endl;
+//     for (int i = 0; i < argc; ++i) {
+//         std::cout << "Argument " << i << ": " << argv[i] << std::endl;
+//     }
+//
+//     while(true) {
+//         continue;
+//     }
+//
+//     return 0;
+// }
+
 
 // Примеры запросов
 // "GET /download?filename=FILE11.txt HTTP/1.1\r\n\r\n";
