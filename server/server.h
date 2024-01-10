@@ -7,21 +7,36 @@
 
 #include <string>
 #include <sstream>
+#include <vector>
+
+
+struct ProcessInfo {
+    int uid;
+    int pid;
+    int ppid;
+    long tty_nr;
+    std::string st;
+    std::string command;
+};
 
 
 class Server {
 public:
-    static std::string list_files(std::string path);
+    static std::string listFiles(std::string path);
 
-    static std::string list_processes();
+    static std::string listProcesses();
+
+    static bool sendProcessList(int clientSocket, const std::string& processesString);
+
+    static std::string getListProcessesOutput(const std::vector<ProcessInfo>& process_info);
 };
 
 
 class ServerHandler {
 public:
-    static void* handle_client(void* client_socket_ptr);
+    static void* handleClient(void* client_socket_ptr);
 
-    static void run_server();
+    static void runServer();
 };
 
 

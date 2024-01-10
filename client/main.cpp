@@ -25,7 +25,7 @@ void fun() {
 
 
 int main() {
-    Client::run_client();
+    Client::runClient();
 
     return 0;
 }

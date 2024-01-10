@@ -19,7 +19,7 @@
 
 class Client {
 public:
-    static void run_client() {
+    static void runClient() {
         sockaddr_in server_addr{};
 
         // Создаем сокет
@@ -61,26 +61,21 @@ public:
                 if (std::string filename = Utiliter::extractFilenameFromRequest(request); Utiliter::receiveFile(
                     std::string(PATH_C) + filename, client_socket)) {
                     std::cout << "File received and saved as " << filename << std::endl;
-                } else {
-                    std::cout << "Error downloading file " + filename << std::endl;
-                }
+                    } else {
+                        std::cout << "Error downloading file " + filename << std::endl;
+                    }
             } else if (strncmp(request, "POST /upload", 12) == 0) {
                 if (std::string filename = Utiliter::extractFilenameFromRequest(request); Utiliter::sendFile(
                     std::string(PATH_C) + filename, client_socket)) {
                     std::cout << "File " + filename + " sent successfully" << std::endl;
-                } else {
-                    std::cout << "Error uploading file " + filename << std::endl;
-                    std::string error_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 20\r\n\r\n" +
-                                                std::string("Error uploading file");
-                    send(client_socket, error_message.c_str(), strlen(error_message.c_str()), 0);
-                }
-            } else {
-                // Получение ответа от сервера (для list_processes и list_files)
-                char buffer[BUFFER_SIZE];
-                if (const ssize_t bytes_received = recv(client_socket, buffer, BUFFER_SIZE, 0); bytes_received > 0) {
-                    buffer[bytes_received] = '\0';
-                    std::cout << buffer << std::endl;
-                }
+                    } else {
+                        std::cout << "Error uploading file " + filename << std::endl;
+                        std::string error_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 20\r\n\r\n" +
+                                                    std::string("Error uploading file");
+                        send(client_socket, error_message.c_str(), strlen(error_message.c_str()), 0);
+                    }
+            } else if (strncmp(request, "GET /list_processes", 19) == 0) {
+                Utiliter::receiveString(client_socket);
             }
         }
 

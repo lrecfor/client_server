@@ -22,12 +22,16 @@ public:
 
     static bool receiveFile(const std::string& filename, int client_socket);
 
-private:
-    static bool receiveConfirmation(int client_socket);
+    static bool sendString(const std::string& string_, int client_socket);
+
+    static bool receiveString(int client_socket);
+
+    static std::string extractErrorMessage(const std::string& responseHeader);
 
     static ssize_t sendAll(int socket, const void* buffer, size_t length);
 
-    static std::string extractErrorMessage(const std::string& responseHeader);
+private:
+    static bool receiveConfirmation(int client_socket);
 };
 
 

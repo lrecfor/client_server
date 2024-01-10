@@ -44,7 +44,7 @@
 //     return binDir;
 // }
 
-std::string Server::list_files(std::string path) {
+std::string Server::listFiles(std::string path) {
     /*
      * Функция для получения листинга файлов.
      */
@@ -152,14 +152,121 @@ std::string Server::list_files(std::string path) {
     return result;
 }
 
-std::string Server::list_processes() {
+std::string Server::getListProcessesOutput(const std::vector<ProcessInfo>& process_info) {
+    /*
+     * Функция для преобразования значений структуры ProccessInfo в std::string.
+     */
+    if (process_info.empty()) {
+        std::cerr << "No processes found." << std::endl;
+        return "";
+    }
+
+    std::ostringstream stream;
+
+    stream << std::left << std::setw(5) << "UID" << std::setw(8) << "PID" << std::setw(8) << "PPID" << std::setw(8)
+            << "STATUS" << std::setw(10) << "TTY" << std::setw(10) << "CMD" << std::endl;
+    stream << std::setfill('-') << std::setw(95) << "-" << std::setfill(' ') << std::endl;
+
+    for (const auto& process: process_info) {
+        stream << std::left << std::setw(5) << process.uid << std::setw(8) << process.pid << std::setw(8) <<
+                process.ppid << std::setw(8) << process.st << std::setw(10) << process.tty_nr << std::setw(10) <<
+                process.command << std::endl;
+    }
+
+    return stream.str();
+}
+
+std::string Server::listProcesses() {
     /*
      * Функция для получения списка процессов через файловую систему procfs (PID, путь до файла, аргументы, информация о файловых дескрипторах)
      */
-    return std::string();
+    std::vector<ProcessInfo> processes;
+
+    if (DIR* dir; (dir = opendir("/proc")) != nullptr) {
+        dirent* ent;
+        while ((ent = readdir(dir)) != nullptr) {
+            if (ent->d_type == DT_DIR) {
+                std::stringstream ssStat, ssStatus, ssCmdline;
+                ssStat << "/proc/" << ent->d_name << "/stat";
+                ssStatus << "/proc/" << ent->d_name << "/status";
+                ssCmdline << "/proc/" << ent->d_name << "/cmdline";
+
+                std::ifstream statFile(ssStat.str());
+                std::ifstream statusFile(ssStatus.str());
+                std::ifstream cmdlineFile(ssCmdline.str());
+                if (statFile.is_open() && statusFile.is_open() && cmdlineFile.is_open()) {
+                    ProcessInfo process;
+
+                    process.pid = std::stoi(ent->d_name);
+
+                    std::string line;
+                    std::getline(statFile, line);
+
+                    std::istringstream iss(line);
+
+                    for (int i = 0; i < 7; ++i) {
+                        iss >> process.tty_nr;
+                    }
+
+                    while (getline(statusFile, line)) {
+                        if (line.compare(0, 6, "State:") == 0) {
+                            process.st = line.substr(7)[0];
+                        } else if (line.compare(0, 5, "PPid:") == 0) {
+                            process.ppid = stoi(line.substr(6));
+                        } else if (line.compare(0, 4, "Uid:") == 0) {
+                            process.uid = stoi(line.substr(5));
+                        }
+                    }
+
+                    // Skip kernel threads
+                    if (process.pid > 0) {
+                        // Read the command from /proc/[PID]/cmdline
+                        getline(cmdlineFile, process.command);
+                        process.command = process.command.substr(0, 128);
+
+                        processes.push_back(process);
+                    }
+
+                    statFile.close();
+                    statusFile.close();
+                    cmdlineFile.close();
+                }
+            }
+        }
+        closedir(dir);
+    }
+
+    return getListProcessesOutput(processes);
 }
 
-void* ServerHandler::handle_client(void* client_socket_ptr) {
+bool Server::sendProcessList(const int clientSocket, const std::string& processesString) {
+    size_t totalBytesSent = 0;
+
+    std::ostringstream header;
+    header << "HTTP/1.1 200 OK\r\nContent-Length: " << processesString.length() << "\r\n\r\n";
+
+    // Отправляем заголовочник с размером файла
+    if (Utiliter::sendAll(clientSocket, header.str().c_str(), header.str().length()) == -1) {
+        std::cerr << "Error sending header" << std::endl;
+        return false;
+    }
+
+    while (totalBytesSent < processesString.length()) {
+        const size_t bytesToSend = std::min(static_cast<size_t>(BUFFER_SIZE), processesString.length() - totalBytesSent);
+        const ssize_t sentBytes = send(clientSocket, processesString.c_str() + totalBytesSent, bytesToSend, 0);
+
+        if (sentBytes == -1) {
+            std::cerr << "Error sending data" << std::endl;
+            return false;
+        }
+
+        totalBytesSent += static_cast<size_t>(sentBytes);
+    }
+
+    return true;
+}
+
+void* ServerHandler::handleClient(void* client_socket_ptr) {
     /*
      * Функция для обработки запросов от клиента.
      */
@@ -207,7 +314,7 @@ void* ServerHandler::handle_client(void* client_socket_ptr) {
         } else if (strncmp(buffer, "GET /list_files", 15) == 0) {
             // Логика обработки запроса листинга файлов
             std::cout << "Handling list files request...\n";
-            if (auto files_list = Server::list_files(""); !files_list.empty()) {
+            if (auto files_list = Server::listFiles(""); !files_list.empty()) {
                 response_message = "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(files_list.size()) +
                                    "\r\n\r\n" +
                                    files_list;
@@ -218,10 +325,13 @@ void* ServerHandler::handle_client(void* client_socket_ptr) {
         } else if (strncmp(buffer, "GET /list_processes", 19) == 0) {
             // Логика обработки запроса списка процессов
             std::cout << "Handling list processes request...\n";
-            if (std::string processes_list = Server::list_processes(); !processes_list.empty()) {
-                response_message = "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(processes_list.size()) +
-                                   "\r\n\r\n" + processes_list;
+            if (std::string processesString = Server::listProcesses(); !processesString.empty()) {
+                if (Utiliter::sendString(processesString, client_socket)) {
+                    std::cout << "Process list sent succesfully" << std::endl;
+                    continue;
+                }
             } else {
+                std::cerr << "Error sending process list" << "\n";
                 response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" + std::string(
                                        "Error getting list processes");
             }
@@ -256,7 +366,7 @@ void* ServerHandler::handle_client(void* client_socket_ptr) {
     pthread_exit(nullptr);
 }
 
-void ServerHandler::run_server() {
+void ServerHandler::runServer() {
     sockaddr_in server_addr{}, client_addr{};
     socklen_t addr_len = sizeof(client_addr);
 
@@ -338,7 +448,7 @@ void ServerHandler::run_server() {
                 pthread_t client_thread;
 
                 if (const auto client_socket_ptr = new int(client_socket); pthread_create(&client_thread, nullptr,
-                                                                               handle_client,
+                                                                               handleClient,
                                                                                (void *) client_socket_ptr) != 0) {
                     perror("Error creating thread");
                     exit(EXIT_FAILURE);
