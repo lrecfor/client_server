@@ -18,6 +18,7 @@ int main() {
 // "GET /list_processes HTTP/1.1\r\nHost: server_ip:port\r\n\r\n";
 // "POST /upload?filename=FILE41.txt HTTP/1.1\r\n\r\n";
 // "GET /process_info?pid=2"
+// "GET /time_marks?filename=FILE1.txt HTTP/1.1\r\n\r\n"
 
 /*
  * GET /download?filename=FILE1.txt HTTP/1.1\r\n\r\n

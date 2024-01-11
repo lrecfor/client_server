@@ -2,28 +2,10 @@
 // Created by dana on 05.01.2024.
 //
 
-// #include "server.h"
-//
-// int main() {
-//     ServerHandler::runServer();
-//
-//     return 0;
-// }
-
-#include <cstring>
-#include <iostream>
-#include <sys/stat.h>
-#include <ctime>
-#include <iomanip>
-#include <ctime>
-#include <sstream>
-#include <filesystem>
-
-
+#include "server.h"
 
 int main() {
-    std::string filename = "SERVER_/BIGBOY.txt"; // Замените на фактический путь к файлу
-    std::cout << printFileTimestamps(filename);
+    ServerHandler::runServer();
 
     return 0;
 }

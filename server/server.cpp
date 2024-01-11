@@ -266,17 +266,20 @@ std::string formatTimeMarks(const timespec timestamp) {
 }
 
 std::string Server::timeMarks(const std::string& filename) {
+    const auto PATH_S = ConfigHandler::getConfigValue<std::string>("../../config.cfg", "send_const", "PATH_S");
     struct stat fileInfo{};
 
-    if (!std::filesystem::exists("../bin/" + filename)) {
+    std::string full_path = "../bin/" + PATH_S + filename;
+
+    if (!std::filesystem::exists(full_path)) {
         std::cerr << "File " << filename << " doesn't exists" << std::endl;
-        return std::string("File " + filename + " doesn't exists");
+        return "-1";
     }
 
     // Получаем информацию о файле
-    if (stat(filename.c_str(), &fileInfo) != 0) {
+    if (stat(full_path.c_str(), &fileInfo) != 0) {
         std::cerr << "Error was occured while getting info about file" << std::endl;
-        return "Error was occured while getting info about file";
+        return "-2";
     }
 
     std::ostringstream result;
@@ -460,25 +463,29 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
                                            "Process with this PID does not exist");
                 }
             }
-        } else if (strncmp(buffer, "GET /time_marks", 17) == 0) {
+        } else if (strncmp(buffer, "GET /time_marks", 15) == 0) {
             std::cout << "Handling time marks request...\n";
 
             if (std::string filename = Utiliter::extractFilenameFromRequest(buffer); !filename.empty()) {
                 if (std::string timeMarksOutput = Server::timeMarks(filename); !timeMarksOutput.empty()) {
-                    if (Utiliter::sendString(timeMarksOutput, client_socket)) {
-                        std::cout << "Time marks sent succesfully" << std::endl;
-                        continue;
+                    if (timeMarksOutput == "-1")
+                        response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" +
+                                           std::string("File " + filename + " doesn't exists");
+                    else if (timeMarksOutput == "-2")
+                        response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" +
+                                           std::string("Error getting time marks");
+                    else {
+                        if (Utiliter::sendString(timeMarksOutput, client_socket)) {
+                            std::cout << "Time marks sent succesfully" << std::endl;
+                            continue;
+                        }
                     }
-                } else {
-                    std::cerr << "Process with this PID does not exist" << "\n";
-                    response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" + std::string(
-                                           "Process with this PID does not exist");
                 }
             }
         } else {
             // Нераспознанный запрос
             std::cerr << "Invalid request\n";
-            response_message = "HTTP/1.1 400 Bad Request\r\nContent-Length: 15\r\n\r\nInvalid request.";
+            response_message = "HTTP/1.1 400 Bad Request\r\nContent-Length: 15\r\n\r\nInvalid request";
         }
 
         // Отправляем ответ клиенту

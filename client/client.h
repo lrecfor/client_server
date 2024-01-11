@@ -77,9 +77,7 @@ public:
                                                     std::string("Error uploading file");
                         send(client_socket, error_message.c_str(), strlen(error_message.c_str()), 0);
                     }
-            } else if (strncmp(request, "GET /list_processes", 19) == 0) {
-                Utiliter::receiveString(client_socket);
-            } else if (strncmp(request, "GET /process_info", 17) == 0) {
+            } else {
                 Utiliter::receiveString(client_socket);
             }
         }
