@@ -15,7 +15,6 @@ struct ProcessInfo {
     int uid;
     int pid;
     int ppid;
-    long tty_nr;
     std::string st;
     std::string command;
 };
@@ -32,6 +31,8 @@ public:
     static std::string getCommandLine(int pid);
 
     static bool sendProcessList(int clientSocket, const std::string& processesString);
+
+    static std::string executeCommand(std::string& command);
 
     static std::string getListProcessesOutput(const std::vector<ProcessInfo>& process_info);
 

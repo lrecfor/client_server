@@ -5,7 +5,8 @@
 #include "server.h"
 
 int main() {
-    ServerHandler::runServer();
+    //ServerHandler::runServer();
+    std::cout << Server::listFiles("");
 
     return 0;
 }

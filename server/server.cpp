@@ -26,25 +26,6 @@
 #include "../utils.h"
 
 
-// static std::string getBinDir() {
-//     char buffer[1024];
-//     const ssize_t len = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
-//     if (len == -1) {
-//         perror("readlink /proc/self/exe failed");
-//         exit(-1);
-//     }
-//
-//     buffer[len] = '\0';
-//     auto binDir = std::string(buffer);
-//
-//     // Remove the binary filename from the path
-//     if (const size_t lastSlashPos = binDir.find_last_of('/'); lastSlashPos != std::string::npos) {
-//         binDir = binDir.substr(0, lastSlashPos);
-//     }
-//
-//     return binDir;
-// }
-
 std::string Server::listFiles(std::string path) {
     /*
      * Функция для получения листинга файлов.
@@ -58,17 +39,15 @@ std::string Server::listFiles(std::string path) {
 
     off_t total_size = 0;
 
-    std::string result;
+    std::ostringstream output;
     std::string server_path = "/mnt/c/Users/dana/uni/4course/sysprog2/pandora_box/client-server/server/bin/SERVER_/";
 
-    // If path is empty, use the current working directory (SERVER_DIR)
     if (path.empty()) {
         path = server_path;
     } else {
         path = server_path + "/" + path;
     }
 
-    // Get the block size
     if (statvfs(path.c_str(), &vfs) == -1) {
         perror("statvfs() error");
         return "";
@@ -83,16 +62,16 @@ std::string Server::listFiles(std::string path) {
 
         std::string link_result;
         switch (thestat.st_mode & S_IFMT) {
-            case S_IFBLK: result += "b";
+            case S_IFBLK: output << "b";
                 break;
-            case S_IFCHR: result += "c";
+            case S_IFCHR: output << "c";
                 break;
-            case S_IFDIR: result += "d";
+            case S_IFDIR: output << "d";
                 break;
-            case S_IFIFO: result += "p";
+            case S_IFIFO: output << "p";
                 break;
             case S_IFLNK: {
-                result += "l";
+                output << "l";
                 char link_target[1024];
                 if (const ssize_t len = readlink(buf, link_target, sizeof(link_target) - 1); len != -1) {
                     link_target[len] = '\0';
@@ -101,56 +80,56 @@ std::string Server::listFiles(std::string path) {
                 }
                 break;
             }
-            case S_IFSOCK: result += "s";
+            case S_IFSOCK: output << "s";
                 break;
-            default: result += "-";
+            default: output << "-";
                 break;
         }
 
-        result += (thestat.st_mode & S_IRUSR) ? "r" : "-";
-        result += (thestat.st_mode & S_IWUSR) ? "w" : "-";
-        result += (thestat.st_mode & S_IXUSR) ? "x" : "-";
-        result += (thestat.st_mode & S_IRGRP) ? "r" : "-";
-        result += (thestat.st_mode & S_IWGRP) ? "w" : "-";
-        result += (thestat.st_mode & S_IXGRP) ? "x" : "-";
-        result += (thestat.st_mode & S_IROTH) ? "r" : "-";
-        result += (thestat.st_mode & S_IWOTH) ? "w" : "-";
-        result += (thestat.st_mode & S_IXOTH) ? "x" : "-";
+        output << ((thestat.st_mode & S_IRUSR) ? "r" : "-");
+        output << ((thestat.st_mode & S_IWUSR) ? "w" : "-");
+        output << ((thestat.st_mode & S_IXUSR) ? "x" : "-");
+        output << ((thestat.st_mode & S_IRGRP) ? "r" : "-");
+        output << ((thestat.st_mode & S_IWGRP) ? "w" : "-");
+        output << ((thestat.st_mode & S_IXGRP) ? "x" : "-");
+        output << ((thestat.st_mode & S_IROTH) ? "r" : "-");
+        output << ((thestat.st_mode & S_IWOTH) ? "w" : "-");
+        output << ((thestat.st_mode & S_IXOTH) ? "x" : "-");
 
-        result += "\t";
-        result += std::to_string(thestat.st_nlink);
+        output << " ";
+        output << std::to_string(thestat.st_nlink);
 
         tf = getpwuid(thestat.st_uid);
-        result += "\t";
-        result += tf->pw_name;
+        output << " ";
+        output << tf->pw_name;
 
         gf = getgrgid(thestat.st_gid);
-        result += "\t";
-        result += gf->gr_name;
+        output << " ";
+        output << gf->gr_name;
 
-        result += "\t";
-        result += std::to_string(thestat.st_size);
+        output << " ";
+        output << std::to_string(thestat.st_size);
+        output << " ";
 
-        // Print the date in the format "Dec 13 11:55"
         char date[20];
         strftime(date, sizeof(date), "%b %d %H:%M", localtime(&thestat.st_mtime));
-        result += "\t";
-        result += date;
+        output << " ";
+        output << date;
 
-        result += "\t";
-        result += thefile->d_name;
-        result += link_result;
-        result += "\n";
+        output << " ";
+        output << thefile->d_name;
+        output << link_result;
+        output << "\n";
 
         total_size += thestat.st_size;
     }
 
-    result += "\ntotal ";
-    result += std::to_string(total_size / vfs.f_bsize);
+    output << "\ntotal ";
+    output << std::to_string(total_size / vfs.f_bsize);
 
     closedir(thedirectory);
 
-    return result;
+    return output.str();
 }
 
 std::string Server::getListProcessesOutput(const std::vector<ProcessInfo>& process_info) {
@@ -165,13 +144,13 @@ std::string Server::getListProcessesOutput(const std::vector<ProcessInfo>& proce
     std::ostringstream stream;
 
     stream << std::left << std::setw(5) << "UID" << std::setw(8) << "PID" << std::setw(8) << "PPID" << std::setw(8)
-            << "STATUS" << std::setw(10) << "TTY" << std::setw(10) << "CMD" << std::endl;
+            << "STATUS" << std::setw(10) << "CMD" << std::endl;
     stream << std::setfill('-') << std::setw(95) << "-" << std::setfill(' ') << std::endl;
 
-    for (const auto& process: process_info) {
-        stream << std::left << std::setw(5) << process.uid << std::setw(8) << process.pid << std::setw(8) <<
-                process.ppid << std::setw(8) << process.st << std::setw(10) << process.tty_nr << std::setw(10) <<
-                process.command << std::endl;
+    for (const auto& [uid, pid, ppid, st, command]: process_info) {
+        stream << std::left << std::setw(5) << uid << std::setw(8) << pid << std::setw(8) <<
+                ppid << std::setw(8) << st << std::setw(10) <<
+                command << std::endl;
     }
 
     return stream.str();
@@ -194,20 +173,14 @@ std::vector<ProcessInfo> Server::listProcesses() {
 
                 std::ifstream statFile(ssStat.str());
                 std::ifstream statusFile(ssStatus.str());
-                std::ifstream cmdlineFile(ssCmdline.str());
-                if (statFile.is_open() && statusFile.is_open() && cmdlineFile.is_open()) {
+                if (std::ifstream cmdlineFile(ssCmdline.str());
+                    statFile.is_open() && statusFile.is_open() && cmdlineFile.is_open()) {
                     ProcessInfo process;
 
                     process.pid = std::stoi(ent->d_name);
 
                     std::string line;
                     std::getline(statFile, line);
-
-                    std::istringstream iss(line);
-
-                    for (int i = 0; i < 7; ++i) {
-                        iss >> process.tty_nr;
-                    }
 
                     while (getline(statusFile, line)) {
                         if (line.compare(0, 6, "State:") == 0) {
@@ -242,9 +215,10 @@ std::vector<ProcessInfo> Server::listProcesses() {
 }
 
 std::string Server::getProcessInfo(const std::string& pid) {
-    std::vector<ProcessInfo> process_list = listProcesses();
-
-    for (auto& process: process_list) {
+    /*
+     * Функция, возвращающая информацию об одном процессе.
+     */
+    for (const std::vector<ProcessInfo> process_list = listProcesses(); auto& process: process_list) {
         if (std::to_string(process.pid) == pid)
             return getListProcessesOutput({process});
     }
@@ -253,6 +227,9 @@ std::string Server::getProcessInfo(const std::string& pid) {
 }
 
 std::string formatTimeMarks(const timespec timestamp) {
+    /*
+     * Функция для форматирования вывода функции timeMarks().
+     */
     tm tm_info{};
     localtime_r(&timestamp.tv_sec, &tm_info);
 
@@ -266,10 +243,13 @@ std::string formatTimeMarks(const timespec timestamp) {
 }
 
 std::string Server::timeMarks(const std::string& filename) {
+    /*
+     *Функция для получения временных меток файла.
+     */
     const auto PATH_S = ConfigHandler::getConfigValue<std::string>("../../config.cfg", "send_const", "PATH_S");
     struct stat fileInfo{};
 
-    std::string full_path = "../bin/" + PATH_S + filename;
+    const std::string full_path = "../bin/" + PATH_S + filename;
 
     if (!std::filesystem::exists(full_path)) {
         std::cerr << "File " << filename << " doesn't exists" << std::endl;
@@ -292,6 +272,9 @@ std::string Server::timeMarks(const std::string& filename) {
 }
 
 std::string Server::getCommandLine(int pid) {
+    /*
+     * Функция для получения полного имении файла процесса и его аргументов
+     */
     std::ostringstream path;
     path << "/proc/" << pid << "/cmdline";
 
@@ -330,6 +313,9 @@ std::string Server::getCommandLine(int pid) {
 }
 
 bool Server::sendProcessList(const int clientSocket, const std::string& processesString) {
+    /*
+     * Функция для отправки списка процессов.
+     */
     const auto BUFFER_SIZE = ConfigHandler::getConfigValue<int>("../../config.cfg", "send_const", "BUFFER_SIZE");
 
     size_t totalBytesSent = 0;
@@ -357,6 +343,49 @@ bool Server::sendProcessList(const int clientSocket, const std::string& processe
     }
 
     return true;
+}
+
+std::string Server::executeCommand(std::string& filename) {
+    /*
+     * Функция для получения стандартного вывода исполняемого файла
+     */
+    const auto PATH_S = ConfigHandler::getConfigValue<std::string>("../../config.cfg", "send_const", "PATH_S");
+
+    std::filesystem::path path(filename);
+
+    // Проверяем, есть ли символ '/' в пути
+    if (path.string().find('/') == std::string::npos) {
+        // Если нет, добавляем префикс "SERVER_/"
+        path = std::filesystem::path(PATH_S) / path;
+    }
+
+    filename = path.string();
+
+    if (!std::filesystem::exists(filename)) {
+        std::cerr << "File " << filename << " doesn't exists" << std::endl;
+        return "-1";
+    }
+
+    std::array<char, 128> buffer{};
+    std::string result;
+
+    // Используем popen для выполнения команды и получения её вывода
+    FILE* pipe = popen(filename.c_str(), "r");
+    if (!pipe) {
+        std::cerr << "Error opening pipe" << std::endl;
+        return "-2";
+    }
+
+    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+        result += buffer.data();
+    }
+
+    if (const auto return_code = pclose(pipe); return_code != 0) {
+        std::cerr << "Error was occured while closing the file" << std::endl;
+        return "-3";
+    }
+
+    return result;
 }
 
 void* ServerHandler::handleClient(void* client_socket_ptr) {
@@ -412,10 +441,12 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
             // Логика обработки запроса листинга файлов
             std::cout << "Handling list files request...\n";
             if (auto files_list = Server::listFiles(""); !files_list.empty()) {
-                response_message = "HTTP/1.1 200 OK\r\nContent-Length: " + std::to_string(files_list.size()) +
-                                   "\r\n\r\n" +
-                                   files_list;
+                if (Utiliter::sendString(files_list, client_socket)) {
+                    std::cout << "Process list sent succesfully" << std::endl;
+                    continue;
+                }
             } else {
+                std::cerr << "Error sending list files" << "\n";
                 response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 24\r\n\r\n" + std::string(
                                        "Error getting list files");
             }
@@ -477,6 +508,28 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
                     else {
                         if (Utiliter::sendString(timeMarksOutput, client_socket)) {
                             std::cout << "Time marks sent succesfully" << std::endl;
+                            continue;
+                        }
+                    }
+                }
+            }
+        } else if (strncmp(buffer, "GET /execute", 12) == 0) {
+            std::cout << "Handling execute file request...\n";
+
+            if (std::string filename = Utiliter::extractFilenameFromRequest(buffer); !filename.empty()) {
+                if (std::string executeOutput = Server::executeCommand(filename); !executeOutput.empty()) {
+                    if (executeOutput == "-1")
+                        response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" +
+                                           std::string("File " + filename + " doesn't exist");
+                    else if (executeOutput == "-2")
+                        response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" +
+                                           std::string("Error opening pipe");
+                    else if (executeOutput == "-3")
+                        response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" +
+                                           std::string("Error getting time marks");
+                    else {
+                        if (Utiliter::sendString(executeOutput, client_socket)) {
+                            std::cout << "Output sent succesfully" << std::endl;
                             continue;
                         }
                     }
