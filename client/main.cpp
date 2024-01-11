@@ -11,29 +11,13 @@ int main() {
     return 0;
 }
 
-// #include <iostream>
-//
-// int main(int argc, char *argv[]) {
-//     std::cout << "Number of command line arguments: " << argc << std::endl;
-//
-//     std::cout << "Command line arguments:" << std::endl;
-//     for (int i = 0; i < argc; ++i) {
-//         std::cout << "Argument " << i << ": " << argv[i] << std::endl;
-//     }
-//
-//     while(true) {
-//         continue;
-//     }
-//
-//     return 0;
-// }
-
 
 // Примеры запросов
 // "GET /download?filename=FILE11.txt HTTP/1.1\r\n\r\n";
 // "GET /list_files HTTP/1.1\r\nHost: server_ip:port\r\n\r\n";
 // "GET /list_processes HTTP/1.1\r\nHost: server_ip:port\r\n\r\n";
 // "POST /upload?filename=FILE41.txt HTTP/1.1\r\n\r\n";
+// "GET /process_info?pid=2"
 
 /*
  * GET /download?filename=FILE1.txt HTTP/1.1\r\n\r\n

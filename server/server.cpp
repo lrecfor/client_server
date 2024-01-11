@@ -19,6 +19,7 @@
 #include <pwd.h>
 #include <grp.h>
 #include <string>
+#include <filesystem>
 
 #include "server.h"
 #include "../utils.cpp"
@@ -176,7 +177,7 @@ std::string Server::getListProcessesOutput(const std::vector<ProcessInfo>& proce
     return stream.str();
 }
 
-std::string Server::listProcesses() {
+std::vector<ProcessInfo> Server::listProcesses() {
     /*
      * Функция для получения списка процессов через файловую систему procfs (PID, путь до файла, аргументы, информация о файловых дескрипторах)
      */
@@ -237,7 +238,54 @@ std::string Server::listProcesses() {
         closedir(dir);
     }
 
-    return getListProcessesOutput(processes);
+    return processes;
+}
+
+std::string Server::getProcessInfo(const std::string& pid) {
+    std::vector<ProcessInfo> process_list = listProcesses();
+
+    for (auto& process: process_list) {
+        if (std::to_string(process.pid) == pid)
+            return getListProcessesOutput({process});
+    }
+
+    return "";
+}
+
+std::string formatTimeMarks(const timespec timestamp) {
+    tm tm_info{};
+    localtime_r(&timestamp.tv_sec, &tm_info);
+
+    char buffer[100];
+    std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &tm_info);
+
+    const int millisec = timestamp.tv_nsec / 1000000;
+    std::sprintf(buffer + strlen(buffer), ".%03d", millisec);
+
+    return buffer;
+}
+
+std::string Server::timeMarks(const std::string& filename) {
+    struct stat fileInfo{};
+
+    if (!std::filesystem::exists("../bin/" + filename)) {
+        std::cerr << "File " << filename << " doesn't exists" << std::endl;
+        return std::string("File " + filename + " doesn't exists");
+    }
+
+    // Получаем информацию о файле
+    if (stat(filename.c_str(), &fileInfo) != 0) {
+        std::cerr << "Error was occured while getting info about file" << std::endl;
+        return "Error was occured while getting info about file";
+    }
+
+    std::ostringstream result;
+
+    result << "File: " << filename << std::endl << "Access: " << formatTimeMarks(fileInfo.st_atim) << std::endl
+            << "Modify: " << formatTimeMarks(fileInfo.st_mtim) << std::endl << "Change: " << formatTimeMarks(
+                fileInfo.st_ctim) << std::endl;
+
+    return result.str();
 }
 
 std::string Server::getCommandLine(int pid) {
@@ -267,7 +315,7 @@ std::string Server::getCommandLine(int pid) {
     std::string result;
 
     if (!arguments.empty()) {
-        for (const auto& arg : arguments) {
+        for (const auto& arg: arguments) {
             result += arg;
             result += " ";
         }
@@ -279,6 +327,8 @@ std::string Server::getCommandLine(int pid) {
 }
 
 bool Server::sendProcessList(const int clientSocket, const std::string& processesString) {
+    const auto BUFFER_SIZE = ConfigHandler::getConfigValue<int>("../../config.cfg", "send_const", "BUFFER_SIZE");
+
     size_t totalBytesSent = 0;
 
     std::ostringstream header;
@@ -291,7 +341,8 @@ bool Server::sendProcessList(const int clientSocket, const std::string& processe
     }
 
     while (totalBytesSent < processesString.length()) {
-        const size_t bytesToSend = std::min(static_cast<size_t>(BUFFER_SIZE), processesString.length() - totalBytesSent);
+        const size_t bytesToSend = std::min(static_cast<size_t>(BUFFER_SIZE),
+                                            processesString.length() - totalBytesSent);
         const ssize_t sentBytes = send(clientSocket, processesString.c_str() + totalBytesSent, bytesToSend, 0);
 
         if (sentBytes == -1) {
@@ -309,6 +360,10 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
     /*
      * Функция для обработки запросов от клиента.
      */
+
+    auto PATH_S = ConfigHandler::getConfigValue<std::string>("../../config.cfg", "send_const", "PATH_S");
+    const auto BUFFER_SIZE = ConfigHandler::getConfigValue<int>("../../config.cfg", "send_const", "BUFFER_SIZE");
+
     const int client_socket = *static_cast<int *>(client_socket_ptr);
     delete static_cast<int *>(client_socket_ptr);
 
@@ -338,7 +393,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
             std::cout << "Handling file download...\n";
 
             if (std::string filename = Utiliter::extractFilenameFromRequest(buffer); !filename.empty()) {
-                if (Utiliter::sendFile(std::string(PATH_S) + filename, client_socket)) {
+                if (Utiliter::sendFile(PATH_S + filename, client_socket)) {
                     std::cout << "File " + filename + " sent successfully" << std::endl;
                     continue;
                 }
@@ -364,7 +419,8 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
         } else if (strncmp(buffer, "GET /list_processes", 19) == 0) {
             // Логика обработки запроса списка процессов
             std::cout << "Handling list processes request...\n";
-            if (std::string processesString = Server::listProcesses(); !processesString.empty()) {
+            if (std::string processesString = Server::getListProcessesOutput(Server::listProcesses()); !processesString.
+                empty()) {
                 if (Utiliter::sendString(processesString, client_socket)) {
                     std::cout << "Process list sent succesfully" << std::endl;
                     continue;
@@ -389,6 +445,36 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
             std::cerr << "Invalid upload request.\n";
             response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 22\r\n\r\n" + std::string(
                                    "Invalid upload request");
+        } else if (strncmp(buffer, "GET /process_info", 17) == 0) {
+            std::cout << "Handling process info request...\n";
+
+            if (std::string pid = Utiliter::extractPidFromRequest(buffer); !pid.empty()) {
+                if (std::string processesString = Server::getProcessInfo(pid); !processesString.empty()) {
+                    if (Utiliter::sendString(processesString, client_socket)) {
+                        std::cout << "Process info sent succesfully" << std::endl;
+                        continue;
+                    }
+                } else {
+                    std::cerr << "Process with this PID does not exist" << "\n";
+                    response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" + std::string(
+                                           "Process with this PID does not exist");
+                }
+            }
+        } else if (strncmp(buffer, "GET /time_marks", 17) == 0) {
+            std::cout << "Handling time marks request...\n";
+
+            if (std::string filename = Utiliter::extractFilenameFromRequest(buffer); !filename.empty()) {
+                if (std::string timeMarksOutput = Server::timeMarks(filename); !timeMarksOutput.empty()) {
+                    if (Utiliter::sendString(timeMarksOutput, client_socket)) {
+                        std::cout << "Time marks sent succesfully" << std::endl;
+                        continue;
+                    }
+                } else {
+                    std::cerr << "Process with this PID does not exist" << "\n";
+                    response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" + std::string(
+                                           "Process with this PID does not exist");
+                }
+            }
         } else {
             // Нераспознанный запрос
             std::cerr << "Invalid request\n";
@@ -406,6 +492,10 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
 }
 
 void ServerHandler::runServer() {
+    auto SERVER_IP = ConfigHandler::getConfigValue<std::string>("../../config.cfg", "connection", "SERVER_IP");
+    const auto PORT = ConfigHandler::getConfigValue<int>("../../config.cfg", "connection", "PORT");
+    const auto MAX_CLIENTS = ConfigHandler::getConfigValue<int>("../../config.cfg", "connection", "MAX_CLIENTS");
+
     sockaddr_in server_addr{}, client_addr{};
     socklen_t addr_len = sizeof(client_addr);
 

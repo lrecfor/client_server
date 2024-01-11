@@ -14,12 +14,15 @@
 #include <vector>
 
 #include "../utils.h"
-#include "../config.cfg"
+#include "../ConfigHandler.h"
 
 
 class Client {
 public:
     static void runClient() {
+        auto SERVER_IP = ConfigHandler::getConfigValue<std::string>("../../config.cfg", "connection", "SERVER_IP");
+        auto PORT = ConfigHandler::getConfigValue<int>("../../config.cfg", "connection", "PORT");
+        auto PATH_C = ConfigHandler::getConfigValue<std::string>("../../config.cfg", "send_const", "PATH_C");
         sockaddr_in server_addr{};
 
         // Создаем сокет
@@ -32,7 +35,7 @@ public:
         // Настраиваем параметры сервера
         server_addr.sin_family = AF_INET;
         server_addr.sin_port = htons(PORT);
-        inet_pton(AF_INET, SERVER_IP, &(server_addr.sin_addr));
+        inet_pton(AF_INET, SERVER_IP.c_str(), &(server_addr.sin_addr));
 
         // Устанавливаем соединение
         if (connect(client_socket, reinterpret_cast<sockaddr *>(&server_addr), sizeof(server_addr)) == -1) {
@@ -59,14 +62,14 @@ public:
             // Если отправлен запрос на загрузку файла, извлекаем имя файла и отправляем
             if (strncmp(request, "GET /download", 13) == 0) {
                 if (std::string filename = Utiliter::extractFilenameFromRequest(request); Utiliter::receiveFile(
-                    std::string(PATH_C) + filename, client_socket)) {
+                    PATH_C + filename, client_socket)) {
                     std::cout << "File received and saved as " << filename << std::endl;
                     } else {
                         std::cout << "Error downloading file " + filename << std::endl;
                     }
             } else if (strncmp(request, "POST /upload", 12) == 0) {
                 if (std::string filename = Utiliter::extractFilenameFromRequest(request); Utiliter::sendFile(
-                    std::string(PATH_C) + filename, client_socket)) {
+                    PATH_C + filename, client_socket)) {
                     std::cout << "File " + filename + " sent successfully" << std::endl;
                     } else {
                         std::cout << "Error uploading file " + filename << std::endl;
@@ -75,6 +78,8 @@ public:
                         send(client_socket, error_message.c_str(), strlen(error_message.c_str()), 0);
                     }
             } else if (strncmp(request, "GET /list_processes", 19) == 0) {
+                Utiliter::receiveString(client_socket);
+            } else if (strncmp(request, "GET /process_info", 17) == 0) {
                 Utiliter::receiveString(client_socket);
             }
         }

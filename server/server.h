@@ -9,6 +9,7 @@
 #include <sstream>
 #include <vector>
 
+#include "../ConfigHandler.h"
 
 struct ProcessInfo {
     int uid;
@@ -24,13 +25,17 @@ class Server {
 public:
     static std::string listFiles(std::string path);
 
-    static std::string listProcesses();
+    static std::string getProcessInfo(const std::string& pid);
+
+    static std::string timeMarks(const std::string& filename);
 
     static std::string getCommandLine(int pid);
 
     static bool sendProcessList(int clientSocket, const std::string& processesString);
 
     static std::string getListProcessesOutput(const std::vector<ProcessInfo>& process_info);
+
+    static std::vector<ProcessInfo> listProcesses();
 };
 
 

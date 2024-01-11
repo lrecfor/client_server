@@ -38,7 +38,25 @@ std::string Utiliter::extractFilenameFromRequest(const char* request) {
     return "";
 }
 
+std::string Utiliter::extractPidFromRequest(const char* request) {
+    /*
+     * Получаем имя файла из запроса (пример: GET /process_info?pid=2).
+     */
+    std::string pid;
+    if (const size_t pos = std::string(request).find("pid="); pos != std::string::npos) {
+        // Найден "pid=", теперь нужно найти конец номера процесса (первый пробел или конец строки)
+        if (const size_t end_pos = std::string(request).find_first_of(" \r\n", pos + 4); end_pos != std::string::npos) {
+            return std::string(request).substr(pos + 4, end_pos - pos - 4);
+        }
+        // Если конец строки не найден, считаем, что номер процесса занимает оставшуюся часть строки
+        return std::string(request).substr(pos + 4);
+    }
+    return "";
+}
+
 bool Utiliter::sendFile(const std::string& filename, int client_socket) {
+    auto BUFFER_SIZE = ConfigHandler::getConfigValue<int>("../../config.cfg", "send_const", "BUFFER_SIZE");
+
     std::ifstream file(filename, std::ios::binary);
     if (!file.is_open()) {
         std::cerr << "Error opening file: " << filename << std::endl;
@@ -74,9 +92,8 @@ bool Utiliter::sendFile(const std::string& filename, int client_socket) {
     }
 
     while (!file.eof()) {
-        constexpr std::streamsize buffer_size = BUFFER_SIZE;
-        char buffer[buffer_size];
-        file.read(buffer, buffer_size);
+        char buffer[BUFFER_SIZE];
+        file.read(buffer, BUFFER_SIZE);
 
         if (sendAll(client_socket, buffer, file.gcount()) == -1) {
             std::cerr << "Error sending file content" << std::endl;
@@ -97,6 +114,8 @@ bool Utiliter::sendFile(const std::string& filename, int client_socket) {
 }
 
 bool Utiliter::receiveFile(const std::string& filename, int client_socket) {
+    auto BUFFER_SIZE = ConfigHandler::getConfigValue<int>("../../config.cfg", "send_const", "BUFFER_SIZE");
+
     // Получаем заголовочник с размером файла
     char header[BUFFER_SIZE];
     ssize_t header_received = recv(client_socket, header, BUFFER_SIZE, 0);
@@ -182,6 +201,8 @@ bool Utiliter::receiveFile(const std::string& filename, int client_socket) {
 }
 
 bool Utiliter::sendString(const std::string& string_, int client_socket) {
+    auto BUFFER_SIZE = ConfigHandler::getConfigValue<int>("../../config.cfg", "send_const", "BUFFER_SIZE");
+
     // Находим размер строки
     const int strSize = string_.length();
 
@@ -229,6 +250,8 @@ bool Utiliter::sendString(const std::string& string_, int client_socket) {
 }
 
 bool Utiliter::receiveString(int client_socket) {
+    auto BUFFER_SIZE = ConfigHandler::getConfigValue<int>("../../config.cfg", "send_const", "BUFFER_SIZE");
+
     // Получаем заголовочник с размером файла
     char header[BUFFER_SIZE];
     ssize_t header_received = recv(client_socket, header, BUFFER_SIZE, 0);
