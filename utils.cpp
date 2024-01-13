@@ -102,7 +102,7 @@ bool Utiliter::sendFile(const std::string& filename, int client_socket) {
         }
 
         // Ожидание подтверждения от второй стороны
-        if (!receiveConfirmation(client_socket)) {
+        if (!receiveConfirmation(client_socket)) { //tckb gjlndth;ltybt yt gjkextyj. nj ljrfxfnm afqk fdnjvfnbxtcrb
             std::cerr << "Error receiving confirmation" << std::endl;
             file.close();
             return false;
@@ -181,7 +181,7 @@ bool Utiliter::receiveFile(const std::string& filename, int client_socket) {
     while (total_bytes_received < file_size) {
         char buffer[BUFFER_SIZE];
         bytes_received = recv(client_socket, buffer, std::min<size_t>(BUFFER_SIZE, file_size - total_bytes_received),
-                              0);
+                              0); //recv jnghfdkztn yt dct ,fqns vj;tn nj j;blfnm dct 1024 b gjnjv jnghfdkznm gjlndth;ltybt j ghbyznbb 1024 ,fqnjd
 
         if (bytes_received <= 0) {
             std::cerr << "Error receiving file content" << std::endl;

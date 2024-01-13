@@ -403,7 +403,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
 
     while (true) {
         // Принимаем запрос от клиента
-        const ssize_t bytes_received = recv(client_socket, buffer, BUFFER_SIZE, 0);
+        const ssize_t bytes_received = recv(client_socket, buffer, BUFFER_SIZE, 0); //fix if one letter
         if (bytes_received <= 0) {
             // Если recv возвращает 0 или отрицательное значение, клиент отключился
             if (bytes_received == 0) {

@@ -5,15 +5,17 @@
 #include "server.h"
 
 int main() {
-    //ServerHandler::runServer();
-    std::cout << Server::listFiles("");
+    ServerHandler::runServer();
 
     return 0;
 }
 
-
 // #include <iostream>
-// #include <fstream>
+// #include <filesystem>
+// #include <unistd.h>
+// #include <cstring>
+// #include <limits.h>
+// #include <iostream>
 // #include <sstream>
 // #include <filesystem>
 //
@@ -27,17 +29,23 @@ int main() {
 //     for (; it != end; ++it) {
 //         std::ostringstream fdPath;
 //         fdPath << *it;
-//         std::cout << "File Descriptor: " << fdPath.str() << std::endl;
 //
-//         // You can add more information about the file descriptor if needed
+//         char targetPath[PATH_MAX];
+//         ssize_t bytesRead = readlink(fdPath.str().c_str(), targetPath, sizeof(targetPath) - 1);
+//
+//         if (bytesRead != -1) {
+//             targetPath[bytesRead] = '\0';
+//             std::cout << "File Descriptor: " << fdPath.str() << " -> " << targetPath << std::endl;
+//         } else {
+//             std::cerr << "Error reading link for: " << fdPath.str() << std::endl;
+//         }
 //     }
 // }
 //
 // int main() {
-//     int pid = 2; // Получаем PID текущего процесса
-//
-//     std::cout << "File Descriptors for PID " << pid << ":" << std::endl;
+//     int pid = 2;  // Replace with the actual process ID you want to inspect
 //     printFileDescriptors(pid);
 //
 //     return 0;
 // }
+
