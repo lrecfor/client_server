@@ -30,14 +30,6 @@ public:
 
     static std::string extractPidFromRequest(const char* request);
 
-    bool sendFile(const std::string& filename, int client_socket);
-
-    bool receiveFile(const std::string& filename, int client_socket);
-
-    bool sendString(const std::string& string_, int client_socket);
-
-    bool receiveString(int client_socket);
-
     static std::string extractErrorMessage(const std::string& responseHeader);
 
     static ssize_t sendAll(int socket, const void* buffer, size_t length);
@@ -132,7 +124,7 @@ public:
         return true;
     }
 
-    bool receive_(const std::string& filename, int client_socket, int mode) const {
+    [[nodiscard]] bool receive_(const std::string& filename, int client_socket, int mode) const {
         std::ofstream received_file;
 
         // Получаем заголовочник с размером файла
@@ -164,28 +156,7 @@ public:
             }
         }
 
-        // Парсинг заголовочника, получаем размер файла
-        //std::string header_str(header, header_received);
-        size_t content_length_pos = header_str.find("Content-Length:");
-
-        if (content_length_pos == std::string::npos) {
-            std::cerr << "Invalid file header" << std::endl;
-            received_file.close();
-            return false;
-        }
-
-        size_t content_length_end = header_str.find("\r\n", content_length_pos);
-
-        if (content_length_end == std::string::npos) {
-            std::cerr << "Invalid file header" << std::endl;
-            received_file.close();
-            return false;
-        }
-
-        std::string content_length_str = header_str.substr(content_length_pos + 15,
-                                                           content_length_end - (content_length_pos + 15));
-
-        size_t data_size = std::stoul(content_length_str); // Размер файла
+        size_t data_size = parseSize(header_str); // Размер файла
 
         timeval timeout{};
         timeout.tv_sec = 3; // секунды
@@ -232,6 +203,32 @@ public:
 
 private:
     static bool receiveConfirmation(int client_socket);
+
+    static size_t parseSize(const std::string& header_str) {
+        /*
+         * Парсинг заголовочника, получаем размер файла.
+        */
+        const size_t content_length_pos = header_str.find("Content-Length:");
+
+        if (content_length_pos == std::string::npos) {
+            std::cerr << "Invalid file header" << std::endl;
+            received_file.close();
+            return false;
+        }
+
+        const size_t content_length_end = header_str.find("\r\n", content_length_pos);
+
+        if (content_length_end == std::string::npos) {
+            std::cerr << "Invalid file header" << std::endl;
+            received_file.close();
+            return false;
+        }
+
+        std::string content_length_str = header_str.substr(content_length_pos + 15,
+                                                           content_length_end - (content_length_pos + 15));
+
+        return std::stoul(content_length_str); // Размер файла
+    }
 };
 
 

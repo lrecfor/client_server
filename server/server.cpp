@@ -410,8 +410,6 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
                 std::cout << "Client disconnected.\n";
                 break;
             }
-
-            perror("Error receiving data");
             continue;
         }
 
