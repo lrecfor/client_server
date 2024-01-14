@@ -17,6 +17,7 @@ struct ProcessInfo {
     int ppid;
     std::string st;
     std::string command;
+    std::string fd;
 };
 
 
@@ -42,6 +43,8 @@ public:
 
 class ServerHandler {
 public:
+    static std::string getFileDescriptors(int pid);
+
     static void* handleClient(void* client_socket_ptr);
 
     static void runServer();

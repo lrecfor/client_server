@@ -132,6 +132,41 @@ std::string Server::listFiles(std::string path) {
     return output.str();
 }
 
+std::string ServerHandler::getFileDescriptors(int pid) {
+    struct stat thestat{};
+    std::ostringstream output;
+    dirent* thefile;
+
+    std::ostringstream path;
+    path << "/proc/" << pid << "/fd/";
+    DIR* dir = opendir(path.str().c_str());
+
+    while ((thefile = readdir(dir)) != nullptr) {
+        char buf[512];
+        sprintf(buf, "%s/%s", path.str().c_str(), thefile->d_name);
+        lstat(buf, &thestat);
+
+        switch (thestat.st_mode & S_IFMT) {
+            case S_IFLNK: {
+                char link_target[1024];
+                if (const ssize_t len = readlink(buf, link_target, sizeof(link_target) - 1); len != -1) {
+                    std::string link_result;
+                    link_target[len] = '\0';
+                    link_result += " -> ";
+                    link_result += link_target;
+
+                    output << thefile->d_name;
+                    output << link_result;
+                    output << " ";
+                }
+                break;
+            }
+        }
+    }
+
+    return output.str();
+}
+
 std::string Server::getListProcessesOutput(const std::vector<ProcessInfo>& process_info) {
     /*
      * Функция для преобразования значений структуры ProccessInfo в std::string.
@@ -144,13 +179,13 @@ std::string Server::getListProcessesOutput(const std::vector<ProcessInfo>& proce
     std::ostringstream stream;
 
     stream << std::left << std::setw(5) << "UID" << std::setw(8) << "PID" << std::setw(8) << "PPID" << std::setw(8)
-            << "STATUS" << std::setw(10) << "CMD" << std::endl;
-    stream << std::setfill('-') << std::setw(95) << "-" << std::setfill(' ') << std::endl;
+            << "STATUS" << std::setw(10) << "CMD" << " " << std::setw(5) << "FD" << std::endl;
+    stream << std::setfill('-') << std::setw(158) << "-" << std::setfill(' ') << std::endl;
 
-    for (const auto& [uid, pid, ppid, st, command]: process_info) {
+    for (const auto& [uid, pid, ppid, st, command, fd]: process_info) {
         stream << std::left << std::setw(5) << uid << std::setw(8) << pid << std::setw(8) <<
                 ppid << std::setw(8) << st << std::setw(10) <<
-                command << std::endl;
+                command << " " << std::setw(5) << fd << std::endl;
     }
 
     return stream.str();
@@ -195,9 +230,8 @@ std::vector<ProcessInfo> Server::listProcesses() {
                     // Skip kernel threads
                     if (process.pid > 0) {
                         // Read the command from /proc/[PID]/cmdline
-                        process.command = getCommandLine(process.pid).substr(0, 128);
-                        // getline(cmdlineFile, process.command);
-                        // process.command = process.command.substr(0, 128);
+                        process.command = getCommandLine(process.pid).substr(0, 64);
+                        process.fd = ServerHandler::getFileDescriptors(process.pid).substr(0, 64);
 
                         processes.push_back(process);
                     }
