@@ -53,8 +53,6 @@ public:
 
     static std::string getCommandLine(int pid);
 
-    bool sendProcessList(int clientSocket, const std::string& processesString);
-
     std::string executeCommand(std::string& command) const;
 
     static std::string getListProcessesOutput(const std::vector<ProcessInfo>& process_info);

@@ -5,13 +5,25 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-#include "ConfigHandler.h"
-
 #include <cstring>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <iostream>
+#include <sys/socket.h>
+#include <fstream>
+#include <sys/types.h>
+#include <string>
+#include <sstream>
+#include <cstring>
+#include <fstream>
+#include <ctime>
+#include <regex>
+#include <string>
+
+
+#include "ConfigHandler.h"
 
 
 class Utiliter {
@@ -26,13 +38,52 @@ public:
         PATH_C = ConfigHandler::getConfigValue<std::string>("../../config.cfg", "send_const", "PATH_C");
     }
 
-    static std::string extractFilenameFromRequest(const char* request);
+    static std::string extractFilenameFromRequest(const char* request) {
+        /*
+         * Получаем имя файла из запроса (пример: GET /download?filename=myfile.txt).
+         */
+        std::string filename;
+        if (const size_t pos = std::string(request).find("filename="); pos != std::string::npos) {
+            // Найден "filename=", теперь нужно найти конец имени файла (первый пробел или конец строки)
+            if (const size_t end_pos = std::string(request).find_first_of(" \r\n", pos + 9);
+                end_pos != std::string::npos) {
+                return std::string(request).substr(pos + 9, end_pos - pos - 9);
+            }
+            // Если конец строки не найден, считаем, что имя файла занимает оставшуюся часть строки
+            return std::string(request).substr(pos + 9);
+        }
+        return "";
+    }
 
-    static std::string extractPidFromRequest(const char* request);
+    static std::string extractPidFromRequest(const char* request) {
+        /*
+         * Получаем имя файла из запроса (пример: GET /process_info?pid=2).
+         */
+        std::string pid;
+        if (const size_t pos = std::string(request).find("pid="); pos != std::string::npos) {
+            // Найден "pid=", теперь нужно найти конец номера процесса (первый пробел или конец строки)
+            if (const size_t end_pos = std::string(request).find_first_of(" \r\n", pos + 4);
+                end_pos != std::string::npos) {
+                return std::string(request).substr(pos + 4, end_pos - pos - 4);
+            }
+            // Если конец строки не найден, считаем, что номер процесса занимает оставшуюся часть строки
+            return std::string(request).substr(pos + 4);
+        }
+        return "";
+    }
 
-    static std::string extractErrorMessage(const std::string& responseHeader);
+    static std::string extractErrorMessage(const std::string& responseHeader) {
+        /*
+         * Функция для извлечения текста ошибки из запроса.
+         */
+        if (const size_t errorPosition = responseHeader.find("\r\n\r\n");
+            errorPosition != std::string::npos && errorPosition + 4 < responseHeader.length()) {
+            // Извлекаем текст ошибки
+            return responseHeader.substr(errorPosition + 4);
+        }
 
-    static ssize_t sendAll(int socket, const void* buffer, size_t length);
+        return "Ошибка не найдена.";
+    }
 
     [[nodiscard]] bool send_(const std::string& data, int client_socket, int mode) const {
         //Находим размер файла
@@ -58,17 +109,16 @@ public:
         header << "HTTP/1.1 200 OK\r\nContent-Length: " << data_size << "\r\n\r\n";
 
         // Отправляем заголовочник с размером файла
-        if (sendAll(client_socket, header.str().c_str(), header.str().length()) == -1) {
+        if (send(client_socket, header.str().c_str(), header.str().length(), 0) == -1) {
             std::cerr << "Error sending header" << std::endl;
             file.close();
             return false;
         }
 
-        // Получаем подтверждение о доставке пакета
-        if (!receiveConfirmation(client_socket)) {
-            std::cerr << "Error receiving confirmation" << std::endl;
-            if (mode == 1)
-                file.close();
+        // Получаем количество доставленных байт
+        int receivedBytes = receiveBytes(client_socket);
+        if (receivedBytes == -1) {
+            std::cerr << "Error receiving byts count" << std::endl;
             return false;
         }
 
@@ -80,30 +130,34 @@ public:
         }
 
         if (mode == 1) {
-            while (!file.eof()) {
+            size_t totalBytesSent = 0;
+
+            while (!file.eof() && totalBytesSent < data_size) {
                 char buffer[BUFFER_SIZE];
                 file.read(buffer, BUFFER_SIZE);
 
-                if (sendAll(client_socket, buffer, file.gcount()) == -1) {
+                if (send(client_socket, buffer, file.gcount(), 0) == -1) {
                     std::cerr << "Error sending file content" << std::endl;
                     file.close();
                     return false;
                 }
 
-                // Ожидание подтверждения от второй стороны
-                if (!receiveConfirmation(client_socket)) {
-                    //tckb gjlndth;ltybt yt gjkextyj. nj ljrfxfnm afqk fdnjvfnbxtcrb
-                    std::cerr << "Error receiving confirmation" << std::endl;
-                    file.close();
+                // Ожидание количества полученных байт
+                int receivedBytes = receiveBytes(client_socket);
+                if (receivedBytes == -1) {
+                    std::cerr << "Error receiving byts count" << std::endl;
                     return false;
                 }
+
+                totalBytesSent += static_cast<size_t>(receivedBytes);
+                file.seekg(totalBytesSent, std::ios::beg);
             }
 
             file.close();
         } else {
             size_t totalBytesSent = 0;
 
-            while (totalBytesSent < data.length()) {
+            while (totalBytesSent < data_size) {
                 const size_t bytesToSend = std::min(static_cast<size_t>(BUFFER_SIZE), data_size - totalBytesSent);
                 const ssize_t sentBytes = send(client_socket, data.c_str() + totalBytesSent, bytesToSend, 0);
 
@@ -112,13 +166,14 @@ public:
                     return false;
                 }
 
-                // Ожидание подтверждения от второй стороны
-                if (!receiveConfirmation(client_socket)) {
-                    std::cerr << "Error receiving confirmation" << std::endl;
+                // Ожидание количества полученных байт
+                int receivedBytes = receiveBytes(client_socket);
+                if (receivedBytes == -1) {
+                    std::cerr << "Error receiving byts count" << std::endl;
                     return false;
                 }
 
-                totalBytesSent += static_cast<size_t>(sentBytes);
+                totalBytesSent += static_cast<size_t>(receivedBytes);
             }
         }
         return true;
@@ -138,14 +193,20 @@ public:
 
         // Проверка на получение сообщения о возникновении ошибки
         std::string header_str(header, header_received);
-        if (strncmp(header_str.c_str(), "HTTP/1.1 500 Internal Error", 27) == 0) {
+        if (strncmp(header_str.c_str(), "HTTP/1.1 500 Internal Error", 27) == 0 ||
+            strncmp(header_str.c_str(), "HTTP/1.1 400 Bad Request", 24) == 0) {
             std::string error_message = extractErrorMessage(header_str);
             std::cerr << error_message << std::endl;
             return false;
         }
 
         // Отправляем подтверждение если ошибок не возникло
-        send(client_socket, "ACK", 3, 0);
+        send(client_socket, std::to_string(header_received).c_str(), std::to_string(header_received).length(), 0);
+
+        // Размер файла
+        size_t data_size = parseSize(header_str);
+        if (data_size == 0)
+            return false;
 
         if (mode == 1) {
             // Создаем файл
@@ -154,17 +215,6 @@ public:
                 std::cerr << "Error creating file" << filename << std::endl;
                 return false;
             }
-        }
-
-        size_t data_size = parseSize(header_str); // Размер файла
-
-        timeval timeout{};
-        timeout.tv_sec = 3; // секунды
-        timeout.tv_usec = 0; // микросекунды
-
-        if (setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-            std::cerr << "Error setting timeout" << std::endl;
-            return false;
         }
 
         ssize_t bytes_received;
@@ -192,8 +242,8 @@ public:
 
             total_bytes_received += bytes_received;
 
-            // Отправка подтверждения
-            send(client_socket, "ACK", 3, 0);
+            // Отправка количества полученных байт
+            send(client_socket, std::to_string(bytes_received).c_str(), std::to_string(bytes_received).length(), 0);
         }
 
         if (mode == 1)
@@ -202,7 +252,19 @@ public:
     }
 
 private:
-    static bool receiveConfirmation(int client_socket);
+    static int receiveBytes(int client_socket) {
+        /*
+         * Функция для получения количества принятых байт.
+         */
+
+        char bytesCount[10];
+
+        if (const ssize_t bytes_received = recv(client_socket, bytesCount, sizeof(bytesCount), 0); bytes_received <= 0) {
+            return -1; // Ошибка при получении подтверждения
+        }
+
+        return std::stoi(bytesCount);
+    }
 
     static size_t parseSize(const std::string& header_str) {
         /*
@@ -212,16 +274,14 @@ private:
 
         if (content_length_pos == std::string::npos) {
             std::cerr << "Invalid file header" << std::endl;
-            received_file.close();
-            return false;
+            return 0;
         }
 
         const size_t content_length_end = header_str.find("\r\n", content_length_pos);
 
         if (content_length_end == std::string::npos) {
             std::cerr << "Invalid file header" << std::endl;
-            received_file.close();
-            return false;
+            return 0;
         }
 
         std::string content_length_str = header_str.substr(content_length_pos + 15,

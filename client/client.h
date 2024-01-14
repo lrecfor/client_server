@@ -87,8 +87,7 @@ public:
                         send(client_socket, error_message.c_str(), strlen(error_message.c_str()), 0);
                     }
             } else {
-                if (!ut.receive_("", client_socket, 2))
-                    std::cout << "Error receiving response from server" << std::endl;
+                ut.receive_("", client_socket, 2);
             }
         }
 
