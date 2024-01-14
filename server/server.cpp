@@ -408,11 +408,11 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
             // Если recv возвращает 0 или отрицательное значение, клиент отключился
             if (bytes_received == 0) {
                 std::cout << "Client disconnected.\n";
-            } else {
-                perror("Error receiving data");
+                break;
             }
 
-            break; // Выходим из цикла обработки клиента
+            perror("Error receiving data");
+            continue;
         }
 
         buffer[bytes_received] = '\0'; // Null-terminate the received data
@@ -425,7 +425,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
             std::cout << "Handling file download...\n";
 
             if (std::string filename = Utiliter::extractFilenameFromRequest(buffer); !filename.empty()) {
-                if (ut.sendFile(PATH_S + filename, client_socket)) {
+                if (ut.send_(PATH_S + filename, client_socket, 1)) {
                     std::cout << "File " + filename + " sent successfully" << std::endl;
                     continue;
                 }
@@ -441,7 +441,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
             // Логика обработки запроса листинга файлов
             std::cout << "Handling list files request...\n";
             if (auto files_list = Server::listFiles(""); !files_list.empty()) {
-                if (ut.sendString(files_list, client_socket)) {
+                if (ut.send_(files_list, client_socket, 2)) {
                     std::cout << "Process list sent succesfully" << std::endl;
                     continue;
                 }
@@ -455,7 +455,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
             std::cout << "Handling list processes request...\n";
             if (std::string processesString = Server::getListProcessesOutput(Server::listProcesses()); !processesString.
                 empty()) {
-                if (ut.sendString(processesString, client_socket)) {
+                if (ut.send_(processesString, client_socket, 2)) {
                     std::cout << "Process list sent succesfully" << std::endl;
                     continue;
                 }
@@ -469,7 +469,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
             std::cout << "Handling file upload...\n";
 
             if (std::string filename = Utiliter::extractFilenameFromRequest(buffer); !filename.empty()) {
-                if (ut.receiveFile(std::string(PATH_S) + filename, client_socket)) {
+                if (ut.receive_(std::string(PATH_S) + filename, client_socket, 1)) {
                     std::cout << "File received and saved as " << filename << std::endl;
                     continue;
                 }
@@ -484,7 +484,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
 
             if (std::string pid = Utiliter::extractPidFromRequest(buffer); !pid.empty()) {
                 if (std::string processesString = Server::getProcessInfo(pid); !processesString.empty()) {
-                    if (ut.sendString(processesString, client_socket)) {
+                    if (ut.send_(processesString, client_socket, 2)) {
                         std::cout << "Process info sent succesfully" << std::endl;
                         continue;
                     }
@@ -506,7 +506,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
                         response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" +
                                            std::string("Error getting time marks");
                     else {
-                        if (ut.sendString(timeMarksOutput, client_socket)) {
+                        if (ut.send_(timeMarksOutput, client_socket, 2)) {
                             std::cout << "Time marks sent succesfully" << std::endl;
                             continue;
                         }
@@ -528,7 +528,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
                         response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" +
                                            std::string("Error getting time marks");
                     else {
-                        if (ut.sendString(executeOutput, client_socket)) {
+                        if (ut.send_(executeOutput, client_socket, 2)) {
                             std::cout << "Output sent succesfully" << std::endl;
                             continue;
                         }

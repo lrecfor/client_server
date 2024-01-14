@@ -71,14 +71,14 @@ public:
             // Если отправлен запрос на загрузку файла, извлекаем имя файла и отправляем
             if (strncmp(request, "GET /download", 13) == 0) {
                 if (std::string filename = Utiliter::extractFilenameFromRequest(request);
-                    ut.receiveFile(PATH_C + filename, client_socket)) {
+                    ut.receive_(PATH_C + filename, client_socket, 1)) {
                     std::cout << "File received and saved as " << filename << std::endl;
                     } else {
                         std::cout << "Error downloading file " + filename << std::endl;
                     }
             } else if (strncmp(request, "POST /upload", 12) == 0) {
                 if (std::string filename = Utiliter::extractFilenameFromRequest(request);
-                    ut.sendFile(PATH_C + filename, client_socket)) {
+                    ut.send_(PATH_C + filename, client_socket, 1)) {
                     std::cout << "File " + filename + " sent successfully" << std::endl;
                     } else {
                         std::cout << "Error uploading file " + filename << std::endl;
@@ -87,7 +87,8 @@ public:
                         send(client_socket, error_message.c_str(), strlen(error_message.c_str()), 0);
                     }
             } else {
-                ut.receiveString(client_socket);
+                if (!ut.receive_("", client_socket, 2))
+                    std::cout << "Error receiving response from server" << std::endl;
             }
         }
 

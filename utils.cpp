@@ -159,7 +159,7 @@ bool Utiliter::receiveFile(const std::string& filename, int client_socket) {
     size_t file_size = std::stoul(content_length_str); // Размер файла
 
     timeval timeout{};
-    timeout.tv_sec = 3;  // секунды
+    timeout.tv_sec = 10;  // секунды
     timeout.tv_usec = 0;  // микросекунды
 
     if (setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
