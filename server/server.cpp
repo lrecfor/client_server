@@ -132,7 +132,7 @@ std::string Server::listFiles(std::string path) {
     return output.str();
 }
 
-std::string ServerHandler::getFileDescriptors(int pid) {
+std::string Server::getFileDescriptors(int pid) {
     struct stat thestat{};
     std::ostringstream output;
     dirent* thefile;
@@ -231,7 +231,7 @@ std::vector<ProcessInfo> Server::listProcesses() {
                     if (process.pid > 0) {
                         // Read the command from /proc/[PID]/cmdline
                         process.command = getCommandLine(process.pid).substr(0, 64);
-                        process.fd = ServerHandler::getFileDescriptors(process.pid).substr(0, 64);
+                        process.fd = getFileDescriptors(process.pid).substr(0, 64);
 
                         processes.push_back(process);
                     }
@@ -280,7 +280,6 @@ std::string Server::timeMarks(const std::string& filename) {
     /*
      *Функция для получения временных меток файла.
      */
-    const auto PATH_S = ConfigHandler::getConfigValue<std::string>("../../config.cfg", "send_const", "PATH_S");
     struct stat fileInfo{};
 
     const std::string full_path = "../bin/" + PATH_S + filename;
@@ -346,45 +345,10 @@ std::string Server::getCommandLine(int pid) {
     return result;
 }
 
-bool Server::sendProcessList(const int clientSocket, const std::string& processesString) {
-    /*
-     * Функция для отправки списка процессов.
-     */
-    const auto BUFFER_SIZE = ConfigHandler::getConfigValue<int>("../../config.cfg", "send_const", "BUFFER_SIZE");
-
-    size_t totalBytesSent = 0;
-
-    std::ostringstream header;
-    header << "HTTP/1.1 200 OK\r\nContent-Length: " << processesString.length() << "\r\n\r\n";
-
-    // Отправляем заголовочник с размером файла
-    if (Utiliter::sendAll(clientSocket, header.str().c_str(), header.str().length()) == -1) {
-        std::cerr << "Error sending header" << std::endl;
-        return false;
-    }
-
-    while (totalBytesSent < processesString.length()) {
-        const size_t bytesToSend = std::min(static_cast<size_t>(BUFFER_SIZE),
-                                            processesString.length() - totalBytesSent);
-        const ssize_t sentBytes = send(clientSocket, processesString.c_str() + totalBytesSent, bytesToSend, 0);
-
-        if (sentBytes == -1) {
-            std::cerr << "Error sending data" << std::endl;
-            return false;
-        }
-
-        totalBytesSent += static_cast<size_t>(sentBytes);
-    }
-
-    return true;
-}
-
-std::string Server::executeCommand(std::string& filename) {
+std::string Server::executeCommand(std::string& filename) const {
     /*
      * Функция для получения стандартного вывода исполняемого файла
      */
-    const auto PATH_S = ConfigHandler::getConfigValue<std::string>("../../config.cfg", "send_const", "PATH_S");
-
     std::filesystem::path path(filename);
 
     // Проверяем, есть ли символ '/' в пути
@@ -426,9 +390,11 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
     /*
      * Функция для обработки запросов от клиента.
      */
-
     auto PATH_S = ConfigHandler::getConfigValue<std::string>("../../config.cfg", "send_const", "PATH_S");
-    const auto BUFFER_SIZE = ConfigHandler::getConfigValue<int>("../../config.cfg", "send_const", "BUFFER_SIZE");
+    auto BUFFER_SIZE = ConfigHandler::getConfigValue<int>("../../config.cfg", "send_const", "BUFFER_SIZE");
+
+    Server sr;
+    Utiliter ut;
 
     const int client_socket = *static_cast<int *>(client_socket_ptr);
     delete static_cast<int *>(client_socket_ptr);
@@ -459,7 +425,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
             std::cout << "Handling file download...\n";
 
             if (std::string filename = Utiliter::extractFilenameFromRequest(buffer); !filename.empty()) {
-                if (Utiliter::sendFile(PATH_S + filename, client_socket)) {
+                if (ut.sendFile(PATH_S + filename, client_socket)) {
                     std::cout << "File " + filename + " sent successfully" << std::endl;
                     continue;
                 }
@@ -475,7 +441,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
             // Логика обработки запроса листинга файлов
             std::cout << "Handling list files request...\n";
             if (auto files_list = Server::listFiles(""); !files_list.empty()) {
-                if (Utiliter::sendString(files_list, client_socket)) {
+                if (ut.sendString(files_list, client_socket)) {
                     std::cout << "Process list sent succesfully" << std::endl;
                     continue;
                 }
@@ -489,7 +455,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
             std::cout << "Handling list processes request...\n";
             if (std::string processesString = Server::getListProcessesOutput(Server::listProcesses()); !processesString.
                 empty()) {
-                if (Utiliter::sendString(processesString, client_socket)) {
+                if (ut.sendString(processesString, client_socket)) {
                     std::cout << "Process list sent succesfully" << std::endl;
                     continue;
                 }
@@ -503,7 +469,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
             std::cout << "Handling file upload...\n";
 
             if (std::string filename = Utiliter::extractFilenameFromRequest(buffer); !filename.empty()) {
-                if (Utiliter::receiveFile(std::string(PATH_S) + filename, client_socket)) {
+                if (ut.receiveFile(std::string(PATH_S) + filename, client_socket)) {
                     std::cout << "File received and saved as " << filename << std::endl;
                     continue;
                 }
@@ -518,7 +484,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
 
             if (std::string pid = Utiliter::extractPidFromRequest(buffer); !pid.empty()) {
                 if (std::string processesString = Server::getProcessInfo(pid); !processesString.empty()) {
-                    if (Utiliter::sendString(processesString, client_socket)) {
+                    if (ut.sendString(processesString, client_socket)) {
                         std::cout << "Process info sent succesfully" << std::endl;
                         continue;
                     }
@@ -532,7 +498,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
             std::cout << "Handling time marks request...\n";
 
             if (std::string filename = Utiliter::extractFilenameFromRequest(buffer); !filename.empty()) {
-                if (std::string timeMarksOutput = Server::timeMarks(filename); !timeMarksOutput.empty()) {
+                if (std::string timeMarksOutput = sr.timeMarks(filename); !timeMarksOutput.empty()) {
                     if (timeMarksOutput == "-1")
                         response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" +
                                            std::string("File " + filename + " doesn't exists");
@@ -540,7 +506,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
                         response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" +
                                            std::string("Error getting time marks");
                     else {
-                        if (Utiliter::sendString(timeMarksOutput, client_socket)) {
+                        if (ut.sendString(timeMarksOutput, client_socket)) {
                             std::cout << "Time marks sent succesfully" << std::endl;
                             continue;
                         }
@@ -551,7 +517,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
             std::cout << "Handling execute file request...\n";
 
             if (std::string filename = Utiliter::extractFilenameFromRequest(buffer); !filename.empty()) {
-                if (std::string executeOutput = Server::executeCommand(filename); !executeOutput.empty()) {
+                if (std::string executeOutput = sr.executeCommand(filename); !executeOutput.empty()) {
                     if (executeOutput == "-1")
                         response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" +
                                            std::string("File " + filename + " doesn't exist");
@@ -562,7 +528,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
                         response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" +
                                            std::string("Error getting time marks");
                     else {
-                        if (Utiliter::sendString(executeOutput, client_socket)) {
+                        if (ut.sendString(executeOutput, client_socket)) {
                             std::cout << "Output sent succesfully" << std::endl;
                             continue;
                         }
@@ -585,11 +551,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
     pthread_exit(nullptr);
 }
 
-void ServerHandler::runServer() {
-    auto SERVER_IP = ConfigHandler::getConfigValue<std::string>("../../config.cfg", "connection", "SERVER_IP");
-    const auto PORT = ConfigHandler::getConfigValue<int>("../../config.cfg", "connection", "PORT");
-    const auto MAX_CLIENTS = ConfigHandler::getConfigValue<int>("../../config.cfg", "connection", "MAX_CLIENTS");
-
+void ServerHandler::runServer(const Server& sr) {
     sockaddr_in server_addr{}, client_addr{};
     socklen_t addr_len = sizeof(client_addr);
 
@@ -603,7 +565,7 @@ void ServerHandler::runServer() {
     // Настраиваем параметры сервера
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(PORT);
+    server_addr.sin_port = htons(sr.PORT);
 
     // Привязываем сокет к адресу и порту
     if (bind(server_socket, reinterpret_cast<sockaddr *>(&server_addr), sizeof(server_addr)) == -1) {
@@ -617,30 +579,30 @@ void ServerHandler::runServer() {
         exit(EXIT_FAILURE);
     }
 
-    std::cout << "Server listening on port " << PORT << "...\n";
+    std::cout << "Server listening on port " << sr.PORT << "...\n";
 
     // Создаем массив структур pollfd
-    pollfd fds[MAX_CLIENTS + 1]; // +1 для слушающего сокета
+    pollfd fds[sr.MAX_CLIENTS + 1]; // +1 для слушающего сокета
 
     // Инициализируем слушающий сокет
     fds[0].fd = server_socket;
     fds[0].events = POLLIN;
 
     // Инициализируем массив клиентских сокетов
-    for (int i = 1; i < MAX_CLIENTS + 1; ++i) {
+    for (int i = 1; i < sr.MAX_CLIENTS + 1; ++i) {
         fds[i].fd = -1;
         fds[i].events = POLLIN;
     }
 
     while (true) {
         // Ждем событий на сокетах
-        if (poll(fds, MAX_CLIENTS + 1, -1) == -1) {
+        if (poll(fds, sr.MAX_CLIENTS + 1, -1) == -1) {
             perror("Error in poll");
             exit(EXIT_FAILURE);
         }
 
         // Обработка событий
-        for (int i = 0; i < MAX_CLIENTS + 1; ++i) {
+        for (int i = 0; i < sr.MAX_CLIENTS + 1; ++i) {
             // Проверяем слушающий сокет
             if (i == 0 && fds[i].revents & POLLIN) {
                 // Принимаем нового клиента
@@ -656,7 +618,7 @@ void ServerHandler::runServer() {
 
                 // Ищем свободное место в массиве клиентских сокетов
                 int j;
-                for (j = 1; j < MAX_CLIENTS + 1; ++j) {
+                for (j = 1; j < sr.MAX_CLIENTS + 1; ++j) {
                     if (fds[j].fd == -1) {
                         fds[j].fd = client_socket;
                         break;
@@ -664,7 +626,7 @@ void ServerHandler::runServer() {
                 }
 
                 // Если нет свободного места, закрываем сокет
-                if (j == MAX_CLIENTS + 1) {
+                if (j == sr.MAX_CLIENTS + 1) {
                     close(client_socket);
                 }
 

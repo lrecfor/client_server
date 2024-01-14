@@ -5,7 +5,8 @@
 #include "server.h"
 
 int main() {
-    ServerHandler::runServer();
+    const Server sr;
+    ServerHandler::runServer(sr);
 
     return 0;
 }

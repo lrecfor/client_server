@@ -14,9 +14,6 @@
 #include <ctime>
 #include <regex>
 #include <string>
-#include <vector>
-#include <iomanip>
-#include <dirent.h>
 
 
 #include "utils.h"
@@ -55,8 +52,6 @@ std::string Utiliter::extractPidFromRequest(const char* request) {
 }
 
 bool Utiliter::sendFile(const std::string& filename, int client_socket) {
-    auto BUFFER_SIZE = ConfigHandler::getConfigValue<int>("../../config.cfg", "send_const", "BUFFER_SIZE");
-
     std::ifstream file(filename, std::ios::binary);
     if (!file.is_open()) {
         std::cerr << "Error opening file: " << filename << std::endl;
@@ -114,8 +109,6 @@ bool Utiliter::sendFile(const std::string& filename, int client_socket) {
 }
 
 bool Utiliter::receiveFile(const std::string& filename, int client_socket) {
-    auto BUFFER_SIZE = ConfigHandler::getConfigValue<int>("../../config.cfg", "send_const", "BUFFER_SIZE");
-
     // Получаем заголовочник с размером файла
     char header[BUFFER_SIZE];
     ssize_t header_received = recv(client_socket, header, BUFFER_SIZE, 0);
@@ -201,8 +194,6 @@ bool Utiliter::receiveFile(const std::string& filename, int client_socket) {
 }
 
 bool Utiliter::sendString(const std::string& string_, int client_socket) {
-    auto BUFFER_SIZE = ConfigHandler::getConfigValue<int>("../../config.cfg", "send_const", "BUFFER_SIZE");
-
     // Находим размер строки
     const int strSize = string_.length();
 
@@ -250,8 +241,6 @@ bool Utiliter::sendString(const std::string& string_, int client_socket) {
 }
 
 bool Utiliter::receiveString(int client_socket) {
-    auto BUFFER_SIZE = ConfigHandler::getConfigValue<int>("../../config.cfg", "send_const", "BUFFER_SIZE");
-
     // Получаем заголовочник с размером файла
     char header[BUFFER_SIZE];
     ssize_t header_received = recv(client_socket, header, BUFFER_SIZE, 0);

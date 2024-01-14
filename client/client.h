@@ -19,11 +19,20 @@
 
 class Client {
 public:
-    static void runClient() {
-        auto SERVER_IP = ConfigHandler::getConfigValue<std::string>("../../config.cfg", "connection", "SERVER_IP");
-        auto PORT = ConfigHandler::getConfigValue<int>("../../config.cfg", "connection", "PORT");
-        auto PATH_C = ConfigHandler::getConfigValue<std::string>("../../config.cfg", "send_const", "PATH_C");
+    std::string SERVER_IP;
+    int PORT;
+    std::string PATH_C;
+
+    Client() {
+        SERVER_IP = ConfigHandler::getConfigValue<std::string>("../../config.cfg", "connection", "SERVER_IP");
+        PORT = ConfigHandler::getConfigValue<int>("../../config.cfg", "connection", "PORT");
+        PATH_C = ConfigHandler::getConfigValue<std::string>("../../config.cfg", "send_const", "PATH_C");
+    }
+
+    void runClient() const {
         sockaddr_in server_addr{};
+
+        Utiliter ut;
 
         // Создаем сокет
         const int client_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -61,15 +70,15 @@ public:
 
             // Если отправлен запрос на загрузку файла, извлекаем имя файла и отправляем
             if (strncmp(request, "GET /download", 13) == 0) {
-                if (std::string filename = Utiliter::extractFilenameFromRequest(request); Utiliter::receiveFile(
-                    PATH_C + filename, client_socket)) {
+                if (std::string filename = Utiliter::extractFilenameFromRequest(request);
+                    ut.receiveFile(PATH_C + filename, client_socket)) {
                     std::cout << "File received and saved as " << filename << std::endl;
                     } else {
                         std::cout << "Error downloading file " + filename << std::endl;
                     }
             } else if (strncmp(request, "POST /upload", 12) == 0) {
-                if (std::string filename = Utiliter::extractFilenameFromRequest(request); Utiliter::sendFile(
-                    PATH_C + filename, client_socket)) {
+                if (std::string filename = Utiliter::extractFilenameFromRequest(request);
+                    ut.sendFile(PATH_C + filename, client_socket)) {
                     std::cout << "File " + filename + " sent successfully" << std::endl;
                     } else {
                         std::cout << "Error uploading file " + filename << std::endl;
@@ -78,7 +87,7 @@ public:
                         send(client_socket, error_message.c_str(), strlen(error_message.c_str()), 0);
                     }
             } else {
-                Utiliter::receiveString(client_socket);
+                ut.receiveString(client_socket);
             }
         }
 
