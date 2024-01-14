@@ -21,6 +21,8 @@
 #include <ctime>
 #include <regex>
 #include <string>
+#include <filesystem>
+#include <iterator>
 
 
 #include "ConfigHandler.h"
@@ -210,9 +212,9 @@ public:
 
         if (mode == 1) {
             // Создаем файл
-            received_file.open(filename, std::ios::binary);
+            received_file.open(filename + "_не_подтверждено", std::ios::binary);
             if (!received_file.is_open()) {
-                std::cerr << "Error creating file" << filename << std::endl;
+                std::cerr << "Error creating file" << filename + "_не_подтверждено" << std::endl;
                 return false;
             }
         }
@@ -246,9 +248,32 @@ public:
             send(client_socket, std::to_string(bytes_received).c_str(), std::to_string(bytes_received).length(), 0);
         }
 
-        if (mode == 1)
+        if (mode == 1) {
             received_file.close();
+            rename((filename + "_не_подтверждено").c_str(), filename.c_str());
+        }
+
         return true;
+    }
+
+    [[nodiscard]] std::vector<std::string> updateFiles() const{
+        const std::string directory_path = "/mnt/c/Users/dana/uni/4course/sysprog2/pandora_box/client-server/client/bin/" + PATH_C;
+        std::vector<std::string> files;
+
+        try {
+            // Проходим по всем файлам в директории
+            for (const auto& entry : std::filesystem::directory_iterator(directory_path)) {
+                // Выводим имя каждого файла
+                if (entry.path().filename().string().find("_не_подтверждено") != std::string::npos) {
+                    files.push_back(entry.path().filename().string());
+                }
+            }
+        } catch (const std::exception& e) {
+            // Обработка ошибок, если произошло исключение при чтении директории
+            std::cerr << "Error reading directory: " << e.what() << std::endl;
+        }
+
+        return files;
     }
 
 private:

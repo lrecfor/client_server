@@ -53,6 +53,9 @@ public:
         }
 
         while (true) {
+            std::cout << "File update is in progress, please wait..." << std::endl;
+            ut.receive_(PATH_C + "update.txt", client_socket, 1);
+
             std::string user_input;
             std::cout << "Enter a request (type 'exit' to quit): ";
             std::getline(std::cin, user_input);
