@@ -91,7 +91,7 @@ public:
                 return false;
             }
 
-            if (ut.receive_(PATH_C + filename.substr(0, filename.size() - 30), client_socket, 1, file_size))
+            if (ut.receive_(PATH_C + filename.erase(filename.length() - 30, 30), client_socket, 1, file_size))
                 std::cout << "File " << filename << " updated" << std::endl;
         }
 

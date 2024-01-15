@@ -20,6 +20,10 @@
 #include <grp.h>
 #include <string>
 #include <filesystem>
+#include <algorithm>
+#include <iostream>
+#include <iterator>
+#include <string>
 
 #include "server.h"
 #include "../utils.cpp"
@@ -389,7 +393,7 @@ std::string Server::executeCommand(std::string& filename) const {
 size_t Server::getOffset(const std::string& filename, int client_socket) const {
     // Отправляем клиенту информацию об имени файла
     std::ostringstream header;
-    header << "HTTP/1.1 200 OK\r\n" << "?filename=" << filename << "\r\n\r\n";
+    header << "HTTP/1.1 200 OK\r\n" << "?filename=" << filename << " HTTP/1.1\r\n\r\n";
 
     // Отправляем заголовочник с именем файла
     if (send(client_socket, header.str().c_str(), header.str().length(), 0) == -1) {
@@ -528,7 +532,8 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
         } else if (strncmp(buffer, "GET /list_processes", 19) == 0) {
             // Логика обработки запроса списка процессов
             std::cout << "Handling list processes request...\n";
-            if (std::string processesString = Server::getListProcessesOutput(Server::listProcesses()); !processesString.
+            if (std::string processesString = Server::getListProcessesOutput(Server::listProcesses()); !
+                processesString.
                 empty()) {
                 if (ut.send_(processesString, client_socket, 2, 0)) {
                     std::cout << "Process list sent succesfully" << std::endl;

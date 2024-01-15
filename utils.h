@@ -42,17 +42,21 @@ public:
 
     static std::string extractFilenameFromRequest(const char* request) {
         /*
-         * Получаем имя файла из запроса (пример: GET /download?filename=myfile.txt).
+         * Получаем имя файла из запроса (пример: GET /download?filename=myfile.txt HTTP/1.1\r\n\r\n).
          */
-        std::string filename;
-        if (const size_t pos = std::string(request).find("filename="); pos != std::string::npos) {
-            // Найден "filename=", теперь нужно найти конец имени файла (первый пробел или конец строки)
-            if (const size_t end_pos = std::string(request).find_first_of(" \r\n", pos + 9);
-                end_pos != std::string::npos) {
-                return std::string(request).substr(pos + 9, end_pos - pos - 9);
+        std::string requestString(request);
+        size_t pos_filename = requestString.find("filename=");
+        if (pos_filename != std::string::npos) {
+            // Найден "filename=", теперь нужно найти конец имени файла (" HTTP" или конец строки)
+            size_t pos_http = requestString.find(" HTTP", pos_filename + 9);
+            size_t pos_end = requestString.find_first_of("\r\n", pos_filename + 9);
+
+            if (pos_http != std::string::npos && (pos_end == std::string::npos || pos_http < pos_end)) {
+                return requestString.substr(pos_filename + 9, pos_http - (pos_filename + 9));
             }
-            // Если конец строки не найден, считаем, что имя файла занимает оставшуюся часть строки
-            return std::string(request).substr(pos + 9);
+
+            // Если " HTTP" не найдено, считаем, что имя файла занимает оставшуюся часть строки
+            return requestString.substr(pos_filename + 9, pos_end - (pos_filename + 9));
         }
         return "";
     }
