@@ -6,11 +6,8 @@
 #include "../utils.h"
 
 int main() {
-    // const Server sr;
-    // ServerHandler::runServer(sr);
-
-    Utiliter ut;
-    ut.updateFiles();
+    const Server sr;
+    ServerHandler::runServer(sr);
 
     return 0;
 }

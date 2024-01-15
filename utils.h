@@ -87,7 +87,7 @@ public:
         return "Ошибка не найдена.";
     }
 
-    [[nodiscard]] bool send_(const std::string& data, int client_socket, int mode) const {
+    [[nodiscard]] bool send_(const std::string& data, int client_socket, int mode, size_t offset_) const {
         //Находим размер файла
         size_t data_size = 0;
         std::ifstream file;
@@ -132,9 +132,9 @@ public:
         }
 
         if (mode == 1) {
-            size_t totalBytesSent = 0;
+            file.seekg(offset_, std::ios::beg);
 
-            while (!file.eof() && totalBytesSent < data_size) {
+            while (!file.eof() && offset_ < data_size) {
                 char buffer[BUFFER_SIZE];
                 file.read(buffer, BUFFER_SIZE);
 
@@ -151,8 +151,8 @@ public:
                     return false;
                 }
 
-                totalBytesSent += static_cast<size_t>(receivedBytes);
-                file.seekg(totalBytesSent, std::ios::beg);
+                offset_ += static_cast<size_t>(receivedBytes);
+                file.seekg(offset_, std::ios::beg);
             }
 
             file.close();
@@ -181,7 +181,7 @@ public:
         return true;
     }
 
-    [[nodiscard]] bool receive_(const std::string& filename, int client_socket, int mode) const {
+    [[nodiscard]] bool receive_(const std::string& filename, int client_socket, int mode, size_t offset_) const {
         std::ofstream received_file;
 
         // Получаем заголовочник с размером файла
@@ -212,7 +212,11 @@ public:
 
         if (mode == 1) {
             // Создаем файл
-            received_file.open(filename + "_не_подтверждено", std::ios::binary);
+            if (offset_ != 0)
+                received_file.open(filename + "_не_подтверждено", std::ios::binary | std::ios::app);
+            else
+                received_file.open(filename + "_не_подтверждено", std::ios::binary);
+
             if (!received_file.is_open()) {
                 std::cerr << "Error creating file" << filename + "_не_подтверждено" << std::endl;
                 return false;
@@ -220,13 +224,13 @@ public:
         }
 
         ssize_t bytes_received;
-        size_t total_bytes_received = 0;
 
         // Цикл для загрузки
-        while (total_bytes_received < data_size) {
+        while (offset_ < data_size) {
+
             char buffer[BUFFER_SIZE];
             bytes_received = recv(client_socket, buffer,
-                                  std::min<size_t>(BUFFER_SIZE, data_size - total_bytes_received),
+                                  std::min<size_t>(BUFFER_SIZE, data_size - offset_),
                                   0);
             //recv jnghfdkztn yt dct ,fqns vj;tn nj j;blfnm dct 1024 b gjnjv jnghfdkznm gjlndth;ltybt j ghbyznbb 1024 ,fqnjd
 
@@ -237,12 +241,14 @@ public:
                 return false;
             }
 
-            if (mode == 1)
+            if (mode == 1) {
+                received_file.seekp(offset_, std::ios::beg);
                 received_file.write(buffer, bytes_received);
+            }
             else
                 std::cout.write(buffer, bytes_received);
 
-            total_bytes_received += bytes_received;
+            offset_ += bytes_received;
 
             // Отправка количества полученных байт
             send(client_socket, std::to_string(bytes_received).c_str(), std::to_string(bytes_received).length(), 0);
@@ -256,7 +262,21 @@ public:
         return true;
     }
 
-    [[nodiscard]] std::vector<std::string> updateFiles() const{
+    static int receiveBytes(int client_socket) {
+        /*
+         * Функция для получения количества принятых байт.
+         */
+
+        char bytesCount[10];
+
+        if (const ssize_t bytes_received = recv(client_socket, bytesCount, sizeof(bytesCount), 0); bytes_received <= 0) {
+            return -1; // Ошибка при получении подтверждения
+        }
+
+        return std::stoi(bytesCount);
+    }
+
+    [[nodiscard]] std::vector<std::string> checkForUndownloadedFiles() const{
         const std::string directory_path = "/mnt/c/Users/dana/uni/4course/sysprog2/pandora_box/client-server/client/bin/" + PATH_C;
         std::vector<std::string> files;
 
@@ -274,21 +294,6 @@ public:
         }
 
         return files;
-    }
-
-private:
-    static int receiveBytes(int client_socket) {
-        /*
-         * Функция для получения количества принятых байт.
-         */
-
-        char bytesCount[10];
-
-        if (const ssize_t bytes_received = recv(client_socket, bytesCount, sizeof(bytesCount), 0); bytes_received <= 0) {
-            return -1; // Ошибка при получении подтверждения
-        }
-
-        return std::stoi(bytesCount);
     }
 
     static size_t parseSize(const std::string& header_str) {

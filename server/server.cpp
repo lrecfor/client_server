@@ -386,6 +386,78 @@ std::string Server::executeCommand(std::string& filename) const {
     return result;
 }
 
+size_t Server::getOffset(const std::string& filename, int client_socket) const {
+    // Отправляем клиенту информацию об имени файла
+    std::ostringstream header;
+    header << "HTTP/1.1 200 OK\r\n" << "?filename=" << filename << "\r\n\r\n";
+
+    // Отправляем заголовочник с именем файла
+    if (send(client_socket, header.str().c_str(), header.str().length(), 0) == -1) {
+        std::cerr << "Error sending header" << std::endl;
+        return false;
+    }
+
+    // Получаем количество доставленных байт
+    if (const int receivedBytes = Utiliter::receiveBytes(client_socket); receivedBytes == -1) {
+        std::cerr << "Error receiving byts count" << std::endl;
+        return false;
+    }
+
+    // Получаем заголовочник с размером файла клиента
+    char file_size[BUFFER_SIZE];
+    const ssize_t header_received = recv(client_socket, file_size, BUFFER_SIZE, 0);
+
+    if (header_received <= 0) {
+        std::cerr << "Error receiving file header" << std::endl;
+        return false;
+    }
+
+    // Отправляем подтверждение если ошибок не возникло
+    send(client_socket, std::to_string(header_received).c_str(), std::to_string(header_received).length(), 0);
+
+    const std::string header_str(file_size, header_received);
+    return Utiliter::parseSize(header_str);
+}
+
+bool Server::updateUndownloadedFiles(const std::vector<std::string>& files, int client_socket) {
+    Utiliter ut;
+    Server sr;
+
+    // Отправляем клиенту информацию о количестве файлов для докачки
+    std::ostringstream header;
+    header << "HTTP/1.1 200 OK\r\nContent-Length: " << files.size() << "\r\n\r\n";
+
+    // Отправляем заголовочник с количеством файлов для докачки
+    if (send(client_socket, header.str().c_str(), header.str().length(), 0) == -1) {
+        std::cerr << "Error sending header" << std::endl;
+        return false;
+    }
+
+    // Получаем количество доставленных байт
+    if (const int receivedBytes = Utiliter::receiveBytes(client_socket); receivedBytes == -1) {
+        std::cerr << "Error receiving byts count" << std::endl;
+        return false;
+    }
+
+    if (files.empty())
+        return true;
+
+    for (const auto& filename: files) {
+        std::string filename_ = filename.substr(0, filename.size() - 30);
+        if (ut.send_(PATH_S + filename_, client_socket, 1, sr.getOffset(filename, client_socket))) {
+            std::cout << "File " + filename + " downloaded completely" << std::endl;
+            continue;
+        }
+        std::cerr << "Error sending file " << filename << "\n";
+        std::string response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 22\r\n\r\n" + std::string(
+                                           "Error downloading file");
+
+        send(client_socket, response_message.c_str(), response_message.length(), 0);
+    }
+
+    return true;
+}
+
 void* ServerHandler::handleClient(void* client_socket_ptr) {
     /*
      * Функция для обработки запросов от клиента.
@@ -400,6 +472,11 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
     delete static_cast<int *>(client_socket_ptr);
 
     char buffer[BUFFER_SIZE];
+
+    std::vector<std::string> files = ut.checkForUndownloadedFiles();
+    if (!sr.updateUndownloadedFiles(files, client_socket)) {
+        std::cerr << "Error updating undownloaded files" << std::endl;
+    }
 
     while (true) {
         // Принимаем запрос от клиента
@@ -423,7 +500,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
             std::cout << "Handling file download...\n";
 
             if (std::string filename = Utiliter::extractFilenameFromRequest(buffer); !filename.empty()) {
-                if (ut.send_(PATH_S + filename, client_socket, 1)) {
+                if (ut.send_(PATH_S + filename, client_socket, 1, 0)) {
                     std::cout << "File " + filename + " sent successfully" << std::endl;
                     continue;
                 }
@@ -439,7 +516,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
             // Логика обработки запроса листинга файлов
             std::cout << "Handling list files request...\n";
             if (auto files_list = Server::listFiles(""); !files_list.empty()) {
-                if (ut.send_(files_list, client_socket, 2)) {
+                if (ut.send_(files_list, client_socket, 2, 0)) {
                     std::cout << "Process list sent succesfully" << std::endl;
                     continue;
                 }
@@ -453,7 +530,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
             std::cout << "Handling list processes request...\n";
             if (std::string processesString = Server::getListProcessesOutput(Server::listProcesses()); !processesString.
                 empty()) {
-                if (ut.send_(processesString, client_socket, 2)) {
+                if (ut.send_(processesString, client_socket, 2, 0)) {
                     std::cout << "Process list sent succesfully" << std::endl;
                     continue;
                 }
@@ -467,7 +544,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
             std::cout << "Handling file upload...\n";
 
             if (std::string filename = Utiliter::extractFilenameFromRequest(buffer); !filename.empty()) {
-                if (ut.receive_(std::string(PATH_S) + filename, client_socket, 1)) {
+                if (ut.receive_(std::string(PATH_S) + filename, client_socket, 1, 0)) {
                     std::cout << "File received and saved as " << filename << std::endl;
                     continue;
                 }
@@ -482,7 +559,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
 
             if (std::string pid = Utiliter::extractPidFromRequest(buffer); !pid.empty()) {
                 if (std::string processesString = Server::getProcessInfo(pid); !processesString.empty()) {
-                    if (ut.send_(processesString, client_socket, 2)) {
+                    if (ut.send_(processesString, client_socket, 2, 0)) {
                         std::cout << "Process info sent succesfully" << std::endl;
                         continue;
                     }
@@ -504,7 +581,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
                         response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" +
                                            std::string("Error getting time marks");
                     else {
-                        if (ut.send_(timeMarksOutput, client_socket, 2)) {
+                        if (ut.send_(timeMarksOutput, client_socket, 2, 0)) {
                             std::cout << "Time marks sent succesfully" << std::endl;
                             continue;
                         }
@@ -526,7 +603,7 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
                         response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" +
                                            std::string("Error getting time marks");
                     else {
-                        if (ut.send_(executeOutput, client_socket, 2)) {
+                        if (ut.send_(executeOutput, client_socket, 2, 0)) {
                             std::cout << "Output sent succesfully" << std::endl;
                             continue;
                         }

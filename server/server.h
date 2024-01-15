@@ -55,11 +55,15 @@ public:
 
     std::string executeCommand(std::string& command) const;
 
+    size_t getOffset(const std::string& filename, int client_socket) const;
+
     static std::string getListProcessesOutput(const std::vector<ProcessInfo>& process_info);
 
     static std::vector<ProcessInfo> listProcesses();
 
     static auto getFileDescriptors(int pid) -> std::string;
+
+    bool updateUndownloadedFiles(const std::vector<std::string>& files, int client_socket);
 
     friend class ServerHandler;
 };
