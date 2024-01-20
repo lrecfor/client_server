@@ -271,7 +271,7 @@ public:
          * Функция для получения количества принятых байт.
          */
 
-        char bytesCount[10];
+        char bytesCount[1024];
 
         if (const ssize_t bytes_received = recv(client_socket, bytesCount, sizeof(bytesCount), 0); bytes_received <= 0) {
             return -1; // Ошибка при получении подтверждения

@@ -49,8 +49,10 @@ public:
         send(client_socket, std::to_string(header_received).c_str(), std::to_string(header_received).length(), 0);
         size_t files_count = Utiliter::parseSize(header_str);
 
-        if (files_count == 0)
+        if (files_count == 0) {
+            std::cout << "No files for update" << std::endl;
             return true;
+        }
 
         for (int i = 0; i < files_count; ++i) {
             // Получаем заголовочник с именем файла

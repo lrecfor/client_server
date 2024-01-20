@@ -472,8 +472,9 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
     Server sr;
     Utiliter ut;
 
-    const int client_socket = *static_cast<int *>(client_socket_ptr);
-    delete static_cast<int *>(client_socket_ptr);
+     // const int client_socket = *static_cast<int *>(client_socket_ptr);
+     // delete static_cast<int *>(client_socket_ptr);
+    int client_socket = *static_cast<int*>(client_socket_ptr);
 
     char buffer[BUFFER_SIZE];
 
@@ -632,103 +633,70 @@ void* ServerHandler::handleClient(void* client_socket_ptr) {
 }
 
 void ServerHandler::runServer(const Server& sr) {
-    sockaddr_in server_addr{}, client_addr{};
-    socklen_t addr_len = sizeof(client_addr);
+    int client_socket;
+    sockaddr_in server_addr, client_addr;
+    socklen_t client_len = sizeof(client_addr);
 
-    // Создаем сокет
+    std::vector<Client*> clients;
+    pollfd fds[sr.MAX_CLIENTS + 1];
+
+    // Создание сокета
     const int server_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (server_socket == -1) {
         perror("Error creating socket");
         exit(EXIT_FAILURE);
     }
 
-    // Настраиваем параметры сервера
+    // Настройка адреса сервера
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;
     server_addr.sin_port = htons(sr.PORT);
 
-    // Привязываем сокет к адресу и порту
+    // Привязка сокета
     if (bind(server_socket, reinterpret_cast<sockaddr *>(&server_addr), sizeof(server_addr)) == -1) {
         perror("Error binding socket");
         exit(EXIT_FAILURE);
     }
-
-    // Слушаем порт
-    if (listen(server_socket, 10) == -1) {
+    // Прослушивание сокета
+    if (listen(server_socket, 5) == -1) {
         perror("Error listening on socket");
         exit(EXIT_FAILURE);
     }
 
     std::cout << "Server listening on port " << sr.PORT << "...\n";
 
-    // Создаем массив структур pollfd
-    pollfd fds[sr.MAX_CLIENTS + 1]; // +1 для слушающего сокета
-
-    // Инициализируем слушающий сокет
+    // Инициализация структуры pollfd для серверного сокета
     fds[0].fd = server_socket;
     fds[0].events = POLLIN;
 
-    // Инициализируем массив клиентских сокетов
-    for (int i = 1; i < sr.MAX_CLIENTS + 1; ++i) {
-        fds[i].fd = -1;
-        fds[i].events = POLLIN;
-    }
-
     while (true) {
-        // Ждем событий на сокетах
-        if (poll(fds, sr.MAX_CLIENTS + 1, -1) == -1) {
-            perror("Error in poll");
+        // Мультиплексирование с poll
+        int poll_result = poll(fds, clients.size() + 1, -1);
+
+        if (poll_result < 0) {
+            perror("poll");
             exit(EXIT_FAILURE);
         }
 
-        // Обработка событий
-        for (int i = 0; i < sr.MAX_CLIENTS + 1; ++i) {
-            // Проверяем слушающий сокет
-            if (i == 0 && fds[i].revents & POLLIN) {
-                // Принимаем нового клиента
-                const int client_socket = accept(server_socket, reinterpret_cast<struct sockaddr *>(&client_addr),
-                                                 &addr_len);
-                if (client_socket == -1) {
-                    perror("Error accepting connection");
-                    continue;
-                }
+        if (fds[0].revents & POLLIN) {
+            // Принятие нового подключения
+            client_socket = accept(server_socket, (sockaddr*)&client_addr, &client_len);
 
-                std::cout << "Connection accepted from " << inet_ntoa(client_addr.sin_addr) << ":" << ntohs(
-                    client_addr.sin_port) << "\n";
+            // Создание нового потока для обработки клиента
+            pthread_t thread_id;
+            pthread_create(&thread_id, NULL, handleClient, static_cast<void*>(&client_socket));
+            pthread_detach(thread_id);
+        }
 
-                // Ищем свободное место в массиве клиентских сокетов
-                int j;
-                for (j = 1; j < sr.MAX_CLIENTS + 1; ++j) {
-                    if (fds[j].fd == -1) {
-                        fds[j].fd = client_socket;
-                        break;
-                    }
-                }
-
-                // Если нет свободного места, закрываем сокет
-                if (j == sr.MAX_CLIENTS + 1) {
-                    close(client_socket);
-                }
-
-                pthread_t client_thread;
-
-                if (const auto client_socket_ptr = new int(client_socket); pthread_create(&client_thread, nullptr,
-                                                                               handleClient,
-                                                                               (void *) client_socket_ptr) != 0) {
-                    perror("Error creating thread");
-                    exit(EXIT_FAILURE);
-                }
-
-                // Позволяет освободить ресурсы потока после завершения
-                pthread_detach(client_thread);
-            } else if (fds[i].revents & POLLIN) {
-                // Обработка события на клиентском сокете
-                // В данной реализации клиентские сокеты обрабатываются в отдельных потоках, поэтому в основном цикле мы не делаем ничего.
+        for (size_t i = 0; i < clients.size() && poll_result > 0; i++) {
+            if (fds[i + 1].revents & POLLIN) {
+                // Обработка ввода для существующих клиентов
+                // В данном случае ничего не делаем, просто читаем и отправляем обратно
+                poll_result--;
             }
         }
     }
 
-    // Закрываем серверный сокет
-    // ReSharper disable once CppDFAUnreachableCode
+    // Закрытие сокета сервера
     close(server_socket);
 }

@@ -5,10 +5,12 @@
 #ifndef SERVER_H
 #define SERVER_H
 
+#include <queue>
 #include <string>
 #include <vector>
 
 #include "../ConfigHandler.h"
+#include "../client/client.h"
 
 struct ProcessInfo {
     int uid;
@@ -19,9 +21,12 @@ struct ProcessInfo {
     std::string fd;
 };
 
+
 class Server;
+class Client;
 
 class ServerHandler {
+
 public:
     static void* handleClient(void* client_socket_ptr);
 
@@ -67,6 +72,7 @@ public:
 
     friend class ServerHandler;
 };
+
 
 
 #endif //SERVER_H
