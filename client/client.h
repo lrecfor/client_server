@@ -122,7 +122,10 @@ public:
         }
 
         std::cout << "File update is in progress, please wait..." << std::endl;
-        checkingForUpdates(client_socket);
+        if (checkingForUpdates(client_socket))
+            std::cout << "File update completed successfully" << std::endl;
+        else
+            std::cout << "File update failed" << std::endl;
 
         while (true) {
             std::string user_input;
