@@ -684,7 +684,7 @@ void ServerHandler::runServer(const Server& sr) {
 
             // Создание нового потока для обработки клиента
             pthread_t thread_id;
-            pthread_create(&thread_id, NULL, handleClient, static_cast<void*>(&client_socket));
+            pthread_create(&thread_id, NULL, handleClient, (&client_socket));
             pthread_detach(thread_id);
         }
 
