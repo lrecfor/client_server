@@ -26,7 +26,6 @@ class Server;
 class Client;
 
 class ServerHandler {
-
 public:
     static bool handleClient(void* client_socket_ptr);
 
@@ -68,7 +67,7 @@ public:
 
     static auto getFileDescriptors(int pid) -> std::string;
 
-    bool checkingForUpdates(int client_socket);
+    bool updateUnsendedFiles(int client_socket) const;
 
     friend class ServerHandler;
 };

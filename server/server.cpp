@@ -22,8 +22,8 @@
 #include <filesystem>
 #include <algorithm>
 #include <iostream>
-#include <iterator>
 #include <string>
+#include <fcntl.h>
 
 #include "server.h"
 #include "../utils.cpp"
@@ -394,12 +394,10 @@ size_t Server::getOffset(const std::string& filename, int client_socket) const {
     // Получаем заголовочник с размером файла клиента
     char file_size[BUFFER_SIZE];
     const ssize_t header_received = recv(client_socket, file_size, BUFFER_SIZE, 0);
-
     if (header_received <= 0) {
         std::cerr << "Error receiving file header" << std::endl;
         return false;
     }
-
     // Отправляем подтверждение если ошибок не возникло
     send(client_socket, std::to_string(header_received).c_str(), std::to_string(header_received).length(), 0);
 
@@ -407,52 +405,60 @@ size_t Server::getOffset(const std::string& filename, int client_socket) const {
     return Utiliter::parseSize(header_str);
 }
 
-bool Server::checkingForUpdates(int client_socket) {
-    Utiliter ut;
-    Server sr;
+bool Server::updateUnsendedFiles(int client_socket) const {
+    const auto response = "GET /update";
+    send(client_socket, response, strlen(response), 0);
 
     // Получаем информацию о количестве файлов, которые необходимо докачать
     char header[BUFFER_SIZE];
     ssize_t header_received = recv(client_socket, header, BUFFER_SIZE, 0);
-
     if (header_received <= 0) {
         std::cerr << "Error receiving file header" << std::endl;
         return false;
     }
 
     // Проверка на получение сообщения о возникновении ошибки
-    std::string header_str(header, header_received);
+    const std::string header_str(header, header_received);
     // Отправляем подтверждение если ошибок не возникло
+    std::cout << "Отправляем подтверждение если ошибок не возникло" << std::endl;
     send(client_socket, std::to_string(header_received).c_str(), std::to_string(header_received).length(), 0);
-    size_t files_count = Utiliter::parseSize(header_str);
 
+    // Извлекаем количество файлов для докачки
+    const size_t files_count = Utiliter::parseSize(header_str);
+
+    // Цикл для отправки недокгруженных частей файлов
     for (int i = 0; i < files_count; ++i) {
+        Server sr;
         // Получаем заголовочник с именем файла
+        std::cout << "Получаем заголовочник с именем файла" << std::endl;
         header_received = recv(client_socket, header, BUFFER_SIZE, 0);
-
         if (header_received <= 0) {
             std::cerr << "Error receiving file header" << std::endl;
             return false;
         }
-
         // Отправляем подтверждение если ошибок не возникло
         send(client_socket, std::to_string(header_received).c_str(), std::to_string(header_received).length(), 0);
+
+        // Извлекаем имя файла для докачки
         std::string filename = Utiliter::extractFilenameFromRequest(header);
 
-        // Отправляем файл со смещения
+        // Получаем путь до файла на стороне сервера
         std::string filename_ = filename.substr(0, filename.size() - 30);
-        auto offset = sr.getOffset(filename, client_socket);
-        if (ut.send_(PATH_S + filename_, client_socket, 1, offset)) {
+        // Получаем смещение
+        const auto offset = sr.getOffset(filename, client_socket);
+        // Отправляем файл со смещения
+        std::cout << "Отправляем файл со смещения" << std::endl;
+        if (const Utiliter ut; ut.send_(PATH_S + filename_, client_socket, 1, offset)) {
             std::cout << "File " + filename + " downloaded completely" << std::endl;
             continue;
         }
 
-        //если возникла ошибка
+        // Если возникла ошибка
         std::cerr << "Error sending file " << filename << "\n";
         std::string response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 22\r\n\r\n" + std::string(
                                            "Error downloading file");
 
-        send(client_socket, response_message.c_str(), response_message.length(), 0);
+        // send(client_socket, response_message.c_str(), response_message.length(), 0);
     }
 
     return true;
@@ -477,6 +483,7 @@ bool ServerHandler::handleClient(void* client_socket_ptr) {
         // Если recv возвращает 0 или отрицательное значение, клиент отключился
         if (bytes_received == 0) {
             std::cout << "Client disconnected.\n";
+            close(client_socket);
             return false;
         }
     }
@@ -603,16 +610,15 @@ bool ServerHandler::handleClient(void* client_socket_ptr) {
             }
         }
     } else if (strncmp(buffer, "GET /update", 11) == 0) {
+        // Логика обработки запроса на догрузку файлов
         std::cout << "Handling update request...\n";
-        if (sr.checkingForUpdates(client_socket)) {
+        if (sr.updateUnsendedFiles(client_socket)) {
             std::cout << "Files updated successfully." << std::endl;
             return true;
         }
-        else {
-            std::cerr << "Error updating undownloaded files" << std::endl;
-            response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 20\r\n\r\n" +
-                                       std::string("Error updating files");
-        }
+        std::cerr << "Error updating undownloaded files" << std::endl;
+        response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 20\r\n\r\n" +
+                           std::string("Error updating files");
     } else {
         // Нераспознанный запрос
         std::cerr << "Invalid request\n";
@@ -621,11 +627,11 @@ bool ServerHandler::handleClient(void* client_socket_ptr) {
 
     // Отправляем ответ клиенту
     send(client_socket, response_message.c_str(), response_message.length(), 0);
-    //удалить дескриптор
+    return true;
 }
 
 void ServerHandler::runServer(const Server& sr) {
-    sockaddr_in server_addr;
+    sockaddr_in server_addr{};
 
     // Создание сокета
     const int server_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -650,9 +656,11 @@ void ServerHandler::runServer(const Server& sr) {
         exit(EXIT_FAILURE);
     }
 
+    fcntl(server_socket, F_SETFL, O_NONBLOCK);
+
     std::cout << "Server listening on port " << sr.PORT << "...\n";
 
-    // Инициализация структуры pollfd для серверного сокета
+    //Инициализация структуры pollfd для серверного сокета
     std::vector<pollfd> fds(sr.MAX_CLIENTS + 1);
     fds[0].fd = server_socket;
     fds[0].events = POLLIN;
@@ -670,8 +678,7 @@ void ServerHandler::runServer(const Server& sr) {
             if (fds[i].revents & POLLIN) {
                 // Если событие - новое подключение
                 if (i == 0) {
-                    int clientSocket = accept(server_socket, nullptr, nullptr);
-                    if (clientSocket == -1) {
+                    if (const int clientSocket = accept(server_socket, nullptr, nullptr); clientSocket == -1) {
                         std::cerr << "Ошибка при принятии нового подключения" << std::endl;
                     } else {
                         std::cout << "Новый клиент подключен" << std::endl;

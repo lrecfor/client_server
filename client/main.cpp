@@ -24,7 +24,7 @@ int main() {
 // GET /execute?filename=ls -lah HTTP/1.1\r\n\r\n
 
 /*
- * GET /download?filename=PHOTO.jpg HTTP/1.1\r\n\r\n
+ * GET /download?filename=VIDEO.MP4 HTTP/1.1\r\n\r\n
  * GET /download?filename=BRONETRANSPORTER.txt HTTP/1.1\r\n\r\n
  * POST /upload?filename=BRONETRANSPORTER.txt HTTP/1.1\r\n\r\n
  * POST /upload?filename=FILE41.txt HTTP/1.1\r\n\r\n

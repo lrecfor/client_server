@@ -31,73 +31,70 @@ public:
         BUFFER_SIZE = ConfigHandler::getConfigValue<int>("../../config.cfg", "send_const", "BUFFER_SIZE");
     }
 
-    bool updateUndownloadedFiles(std::vector<std::string> files, int client_socket) const
-    {
-        Utiliter ut;
+    [[nodiscard]] ssize_t sendOffset(const std::string& filename, int client_socket) const {
+        // Находим размер файла
+        std::ifstream file;
+        file.open(PATH_C + filename, std::ios::binary);
+        if (!file.is_open()) {
+            std::cerr << "Error opening file: " << filename << std::endl;
+            return false;
+        }
+        file.seekg(0, std::ios::end);
+        ssize_t file_size = file.tellg();
+        file.seekg(0, std::ios::beg);
+        file.close();
 
+        // Отправляем серверу информацию о размере файла
+        std::ostringstream header;
+        header << "HTTP/1.1 200 OK\r\nContent-Length: " << file_size << "\r\n\r\n";
+        if (send(client_socket, header.str().c_str(), header.str().length(), 0) == -1) {
+            std::cerr << "Error sending header" << std::endl;
+            return -1;
+        }
+        // Получаем количество доставленных байт
+        if (const int receivedBytes = Utiliter::receiveBytes(client_socket); receivedBytes == -1) {
+            std::cerr << "Error receiving byts count" << std::endl;
+            return -1;
+        }
+
+        return file_size;
+    }
+
+    [[nodiscard]] bool updateUndownloadedFiles(std::vector<std::string> files, int client_socket) const {
         // Отправляем клиенту информацию о количестве файлов для докачки
         std::ostringstream header;
         header << "HTTP/1.1 200 OK\r\nContent-Length: " << files.size() << "\r\n\r\n";
-
-        // Отправляем заголовочник с количеством файлов для докачки
         if (send(client_socket, header.str().c_str(), header.str().length(), 0) == -1) {
             std::cerr << "Error sending header" << std::endl;
             return false;
         }
-
         // Получаем количество доставленных байт
         if (const int receivedBytes = Utiliter::receiveBytes(client_socket); receivedBytes == -1) {
             std::cerr << "Error receiving byts count" << std::endl;
             return false;
         }
 
-        for (auto& filename: files) {
+        // Цикл для догрузки файлов с сервера
+        for (auto& fileName: files) {
             // Отправляем заголовочник с именем файла
             std::ostringstream header2;
-            header2 << "HTTP/1.1 200 OK\r\n" << "?filename=" << filename << " HTTP/1.1\r\n\r\n";
-
+            header2 << "HTTP/1.1 200 OK\r\n" << "?filename=" << fileName << " HTTP/1.1\r\n\r\n";
             if (send(client_socket, header2.str().c_str(), header2.str().length(), 0) == -1) {
                 std::cerr << "Error sending header" << std::endl;
                 return false;
             }
-
             // Получаем количество доставленных байт
             if (const int receivedBytes = Utiliter::receiveBytes(client_socket); receivedBytes == -1) {
                 std::cerr << "Error receiving byts count" << std::endl;
                 return false;
             }
 
-            // Находим размер файла
-            std::ifstream file;
-            file.open(PATH_C + filename, std::ios::binary | std::ios::in);
-            if (!file.is_open()) {
-                std::cerr << "Error opening file: " << filename << std::endl;
-                return false;
+            if (ssize_t fileSize = sendOffset(fileName, client_socket); fileSize != -1) {
+                // Получаем файл
+                if (Utiliter ut; ut.receive_(PATH_C + fileName.erase(fileName.length() - 30, 30), client_socket, 1,
+                                             fileSize))
+                    std::cout << "File " << fileName << " updated" << std::endl;
             }
-            file.seekg(0, std::ios::end);
-            ssize_t file_size = file.tellg();
-            file.seekg(0, std::ios::beg);
-
-            // Отправляем серверу информацию о размере файла
-            std::ostringstream header3;
-            header3 << "HTTP/1.1 200 OK\r\nContent-Length: " << file_size << "\r\n\r\n";
-
-            if (send(client_socket, header3.str().c_str(), header2.str().length(), 0) == -1) {
-                std::cerr << "Error sending header" << std::endl;
-                return false;
-            }
-
-            // Получаем количество доставленных байт
-            if (const int receivedBytes = Utiliter::receiveBytes(client_socket); receivedBytes == -1) {
-                std::cerr << "Error receiving byts count" << std::endl;
-                return false;
-            }
-
-            // Получаем файл
-            if (ut.receive_(PATH_C + filename.erase(filename.length() - 30, 30), client_socket, 1, file_size))
-                std::cout << "File " << filename << " updated" << std::endl;
-            else
-                return false;
         }
 
         return true;
@@ -106,7 +103,7 @@ public:
     void runClient() const {
         sockaddr_in server_addr{};
 
-        Utiliter ut;
+        const Utiliter ut;
 
         // Создаем сокет
         const int client_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -126,9 +123,15 @@ public:
             exit(EXIT_FAILURE);
         }
 
-        if (std::vector<std::string> files = ut.checkForUndownloadedFiles(); !files.empty()) {
-            std::string request = ("GET /update?count=" + std::to_string(files.size()));
+        if (const std::vector<std::string> files = ut.checkForUndownloadedFiles(); !files.empty()) {
+            const std::string request = ("GET /update?count=" + std::to_string(files.size()));
             send(client_socket, request.c_str(), strlen(request.c_str()), 0);
+
+            char header[BUFFER_SIZE];
+            if (const ssize_t header_received = recv(client_socket, header, BUFFER_SIZE, 0); header_received <= 0) {
+                std::cerr << "Error receiving file header" << std::endl;
+                return;
+            }
 
             std::cout << "File update is in progress, please wait..." << std::endl;
             if (updateUndownloadedFiles(files, client_socket))
