@@ -28,7 +28,7 @@ class Client;
 class ServerHandler {
 
 public:
-    static void* handleClient(void* client_socket_ptr);
+    static bool handleClient(void* client_socket_ptr);
 
     static void runServer(const Server &sr);
 };
@@ -54,7 +54,7 @@ public:
 
     static std::string getProcessInfo(const std::string& pid);
 
-    std::string timeMarks(const std::string& filename);
+    std::string timeMarks(const std::string& filename) const;
 
     static std::string getCommandLine(int pid);
 
@@ -68,7 +68,7 @@ public:
 
     static auto getFileDescriptors(int pid) -> std::string;
 
-    bool updateUndownloadedFiles(const std::vector<std::string>& files, int client_socket);
+    bool checkingForUpdates(int client_socket);
 
     friend class ServerHandler;
 };

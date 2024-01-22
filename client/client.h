@@ -31,40 +31,41 @@ public:
         BUFFER_SIZE = ConfigHandler::getConfigValue<int>("../../config.cfg", "send_const", "BUFFER_SIZE");
     }
 
-    bool checkingForUpdates(int client_socket) const {
+    bool updateUndownloadedFiles(std::vector<std::string> files, int client_socket) const
+    {
         Utiliter ut;
 
-        // Получаем информацию о количестве файлов, которые необходимо докачать
-        char header[BUFFER_SIZE];
-        ssize_t header_received = recv(client_socket, header, BUFFER_SIZE, 0);
+        // Отправляем клиенту информацию о количестве файлов для докачки
+        std::ostringstream header;
+        header << "HTTP/1.1 200 OK\r\nContent-Length: " << files.size() << "\r\n\r\n";
 
-        if (header_received <= 0) {
-            std::cerr << "Error receiving file header" << std::endl;
+        // Отправляем заголовочник с количеством файлов для докачки
+        if (send(client_socket, header.str().c_str(), header.str().length(), 0) == -1) {
+            std::cerr << "Error sending header" << std::endl;
             return false;
         }
 
-        // Проверка на получение сообщения о возникновении ошибки
-        std::string header_str(header, header_received);
-        // Отправляем подтверждение если ошибок не возникло
-        send(client_socket, std::to_string(header_received).c_str(), std::to_string(header_received).length(), 0);
-        size_t files_count = Utiliter::parseSize(header_str);
-
-        if (files_count == 0) {
-            std::cout << "No files for update" << std::endl;
-            return true;
+        // Получаем количество доставленных байт
+        if (const int receivedBytes = Utiliter::receiveBytes(client_socket); receivedBytes == -1) {
+            std::cerr << "Error receiving byts count" << std::endl;
+            return false;
         }
 
-        for (int i = 0; i < files_count; ++i) {
-            // Получаем заголовочник с именем файла
-            header_received = recv(client_socket, header, BUFFER_SIZE, 0);
+        for (auto& filename: files) {
+            // Отправляем заголовочник с именем файла
+            std::ostringstream header2;
+            header2 << "HTTP/1.1 200 OK\r\n" << "?filename=" << filename << " HTTP/1.1\r\n\r\n";
 
-            if (header_received <= 0) {
-                std::cerr << "Error receiving file header" << std::endl;
+            if (send(client_socket, header2.str().c_str(), header2.str().length(), 0) == -1) {
+                std::cerr << "Error sending header" << std::endl;
                 return false;
             }
-            // Отправляем подтверждение если ошибок не возникло
-            send(client_socket, std::to_string(header_received).c_str(), std::to_string(header_received).length(), 0);
-            std::string filename = Utiliter::extractFilenameFromRequest(header);
+
+            // Получаем количество доставленных байт
+            if (const int receivedBytes = Utiliter::receiveBytes(client_socket); receivedBytes == -1) {
+                std::cerr << "Error receiving byts count" << std::endl;
+                return false;
+            }
 
             // Находим размер файла
             std::ifstream file;
@@ -77,12 +78,11 @@ public:
             ssize_t file_size = file.tellg();
             file.seekg(0, std::ios::beg);
 
-            // Отправляем клиенту информацию о размере файла
-            std::ostringstream header2;
-            header2 << "HTTP/1.1 200 OK\r\nContent-Length: " << file_size << "\r\n\r\n";
+            // Отправляем серверу информацию о размере файла
+            std::ostringstream header3;
+            header3 << "HTTP/1.1 200 OK\r\nContent-Length: " << file_size << "\r\n\r\n";
 
-            // Отправляем заголовочник с именем файла
-            if (send(client_socket, header2.str().c_str(), header2.str().length(), 0) == -1) {
+            if (send(client_socket, header3.str().c_str(), header2.str().length(), 0) == -1) {
                 std::cerr << "Error sending header" << std::endl;
                 return false;
             }
@@ -93,6 +93,7 @@ public:
                 return false;
             }
 
+            // Получаем файл
             if (ut.receive_(PATH_C + filename.erase(filename.length() - 30, 30), client_socket, 1, file_size))
                 std::cout << "File " << filename << " updated" << std::endl;
             else
@@ -125,11 +126,16 @@ public:
             exit(EXIT_FAILURE);
         }
 
-        std::cout << "File update is in progress, please wait..." << std::endl;
-        if (checkingForUpdates(client_socket))
-            std::cout << "File update completed successfully" << std::endl;
-        else
-            std::cout << "File update failed" << std::endl;
+        if (std::vector<std::string> files = ut.checkForUndownloadedFiles(); !files.empty()) {
+            std::string request = ("GET /update?count=" + std::to_string(files.size()));
+            send(client_socket, request.c_str(), strlen(request.c_str()), 0);
+
+            std::cout << "File update is in progress, please wait..." << std::endl;
+            if (updateUndownloadedFiles(files, client_socket))
+                std::cout << "File update completed successfully" << std::endl;
+            else
+                std::cout << "File update failed" << std::endl;
+        }
 
         while (true) {
             std::string user_input;

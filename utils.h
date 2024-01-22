@@ -78,6 +78,23 @@ public:
         return "";
     }
 
+    static std::string extractCountFromRequest(const char* request) {
+        /*
+         * Получаем имя файла из запроса (пример: GET /process_info?pid=2).
+         */
+        std::string pid;
+        if (const size_t pos = std::string(request).find("count="); pos != std::string::npos) {
+            // Найден "count=", теперь нужно найти конец номера процесса (первый пробел или конец строки)
+            if (const size_t end_pos = std::string(request).find_first_of(" \r\n", pos + 6);
+                end_pos != std::string::npos) {
+                return std::string(request).substr(pos + 6, end_pos - pos - 6);
+                }
+            // Если конец строки не найден, считаем, что номер процесса занимает оставшуюся часть строки
+            return std::string(request).substr(pos + 6);
+        }
+        return "";
+    }
+
     static std::string extractErrorMessage(const std::string& responseHeader) {
         /*
          * Функция для извлечения текста ошибки из запроса.
