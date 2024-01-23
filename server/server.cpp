@@ -630,6 +630,178 @@ bool ServerHandler::handleClient(void* client_socket_ptr) {
     return true;
 }
 
+void ServerHandler::handle_client(void* client_socket_ptr) {
+    /*
+     * Функция для обработки запросов от клиента.
+     */
+    auto PATH_S = ConfigHandler::getConfigValue<std::string>("../../config.cfg", "send_const", "PATH_S");
+    auto BUFFER_SIZE = ConfigHandler::getConfigValue<int>("../../config.cfg", "send_const", "BUFFER_SIZE");
+
+    Server sr;
+    Utiliter ut;
+
+    int client_socket = *static_cast<int *>(client_socket_ptr);
+
+    char buffer[BUFFER_SIZE];
+
+    while (true) {
+        const ssize_t bytes_received = recv(client_socket, buffer, BUFFER_SIZE, 0);
+        if (bytes_received <= 0) {
+            // Если recv возвращает 0 или отрицательное значение, клиент отключился
+            if (bytes_received == 0) {
+                std::cout << "Client disconnected.\n";
+                close(client_socket);
+                break;
+            }
+            continue;
+        }
+
+        buffer[bytes_received] = '\0'; // Null-terminate the received data
+
+        // Обработка запроса в зависимости от протокола
+        std::string response_message;
+
+        if (strncmp(buffer, "GET /download", 13) == 0) {
+            // Логика обработки запроса загрузки файлов с сервера
+            std::cout << "Handling file download...\n";
+
+            if (std::string filename = Utiliter::extractFilenameFromRequest(buffer); !filename.empty()) {
+                if (ut.send_(PATH_S + filename, client_socket, 1, 0)) {
+                    std::cout << "File " + filename + " sent successfully" << std::endl;
+                    continue;
+                }
+                std::cerr << "Error sending file " << filename << "\n";
+                response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 22\r\n\r\n" + std::string(
+                                       "Error downloading file");
+            } else {
+                std::cerr << "Invalid download request.\n";
+                response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 24\r\n\r\n" + std::string(
+                                       "Invalid download request");
+            }
+        } else if (strncmp(buffer, "GET /list_files", 15) == 0) {
+            // Логика обработки запроса листинга файлов
+            std::cout << "Handling list files request...\n";
+            if (auto files_list = Server::listFiles(""); !files_list.empty()) {
+                if (ut.send_(files_list, client_socket, 2, 0)) {
+                    std::cout << "Process list sent succesfully" << std::endl;
+                    continue;
+                }
+            } else {
+                std::cerr << "Error sending list files" << "\n";
+                response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 24\r\n\r\n" + std::string(
+                                       "Error getting list files");
+            }
+        } else if (strncmp(buffer, "GET /list_processes", 19) == 0) {
+            // Логика обработки запроса списка процессов
+            std::cout << "Handling list processes request...\n";
+            if (std::string processesString = Server::getListProcessesOutput(Server::listProcesses()); !
+                processesString.
+                empty()) {
+                if (ut.send_(processesString, client_socket, 2, 0)) {
+                    std::cout << "Process list sent succesfully" << std::endl;
+                    continue;
+                }
+            } else {
+                std::cerr << "Error sending process list" << "\n";
+                response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" + std::string(
+                                       "Error getting list processes");
+            }
+        } else if (strncmp(buffer, "POST /upload", 12) == 0) {
+            // Логика обработки запроса выгрузки файлов на сервер
+            std::cout << "Handling file upload...\n";
+
+            if (std::string filename = Utiliter::extractFilenameFromRequest(buffer); !filename.empty()) {
+                if (ut.receive_(std::string(PATH_S) + filename, client_socket, 1, 0)) {
+                    std::cout << "File received and saved as " << filename << std::endl;
+                    continue;
+                }
+                std::cerr << "Error receiving file " << filename << "\n";
+                continue;
+            }
+            std::cerr << "Invalid upload request.\n";
+            response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 22\r\n\r\n" + std::string(
+                                   "Invalid upload request");
+        } else if (strncmp(buffer, "GET /process_info", 17) == 0) {
+            std::cout << "Handling process info request...\n";
+
+            if (std::string pid = Utiliter::extractPidFromRequest(buffer); !pid.empty()) {
+                if (std::string processesString = Server::getProcessInfo(pid); !processesString.empty()) {
+                    if (ut.send_(processesString, client_socket, 2, 0)) {
+                        std::cout << "Process info sent succesfully" << std::endl;
+                        continue;
+                    }
+                } else {
+                    std::cerr << "Process with this PID does not exist" << "\n";
+                    response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" + std::string(
+                                           "Process with this PID does not exist");
+                }
+            }
+        } else if (strncmp(buffer, "GET /time_marks", 15) == 0) {
+            std::cout << "Handling time marks request...\n";
+
+            if (std::string filename = Utiliter::extractFilenameFromRequest(buffer); !filename.empty()) {
+                if (std::string timeMarksOutput = sr.timeMarks(filename); !timeMarksOutput.empty()) {
+                    if (timeMarksOutput == "-1")
+                        response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" +
+                                           std::string("File " + filename + " doesn't exists");
+                    else if (timeMarksOutput == "-2")
+                        response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" +
+                                           std::string("Error getting time marks");
+                    else {
+                        if (ut.send_(timeMarksOutput, client_socket, 2, 0)) {
+                            std::cout << "Time marks sent succesfully" << std::endl;
+                            continue;
+                        }
+                    }
+                }
+            }
+        } else if (strncmp(buffer, "GET /execute", 12) == 0) {
+            std::cout << "Handling execute file request...\n";
+
+            if (std::string filename = Utiliter::extractFilenameFromRequest(buffer); !filename.empty()) {
+                if (std::string executeOutput = sr.executeCommand(filename); !executeOutput.empty()) {
+                    if (executeOutput == "-1")
+                        response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" +
+                                           std::string("File " + filename + " doesn't exist");
+                    else if (executeOutput == "-2")
+                        response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" +
+                                           std::string("Error opening pipe");
+                    else if (executeOutput == "-3")
+                        response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 28\r\n\r\n" +
+                                           std::string("Error getting time marks");
+                    else {
+                        if (ut.send_(executeOutput, client_socket, 2, 0)) {
+                            std::cout << "Output sent succesfully" << std::endl;
+                            continue;
+                        }
+                    }
+                }
+            }
+        } else if (strncmp(buffer, "GET /update", 11) == 0) {
+            // Логика обработки запроса на догрузку файлов
+            std::cout << "Handling update request...\n";
+            if (sr.updateUnsendedFiles(client_socket)) {
+                std::cout << "Files updated successfully." << std::endl;
+                continue;
+            }
+            std::cerr << "Error updating undownloaded files" << std::endl;
+            response_message = "HTTP/1.1 500 Internal Error\r\nContent-Length: 20\r\n\r\n" +
+                               std::string("Error updating files");
+        } else {
+            // Нераспознанный запрос
+            std::cerr << "Invalid request\n";
+            response_message = "HTTP/1.1 400 Bad Request\r\nContent-Length: 15\r\n\r\nInvalid request";
+        }
+
+        // Отправляем ответ клиенту
+        send(client_socket, response_message.c_str(), response_message.length(), 0);
+    }
+
+    close(client_socket);
+
+    pthread_exit(nullptr);
+}
+
 void ServerHandler::runServer(const Server& sr) {
     sockaddr_in server_addr{};
 
@@ -656,41 +828,63 @@ void ServerHandler::runServer(const Server& sr) {
         exit(EXIT_FAILURE);
     }
 
-    fcntl(server_socket, F_SETFL, O_NONBLOCK);
-
     std::cout << "Server listening on port " << sr.PORT << "...\n";
 
-    //Инициализация структуры pollfd для серверного сокета
-    std::vector<pollfd> fds(sr.MAX_CLIENTS + 1);
-    fds[0].fd = server_socket;
-    fds[0].events = POLLIN;
+    if (sr.RUN_TYPE == 1) {
+        // Мультиплекстрование
+        //Инициализация структуры pollfd для серверного сокета
+        std::vector<pollfd> fds(sr.MAX_CLIENTS + 1);
+        fds[0].fd = server_socket;
+        fds[0].events = POLLIN;
 
+        while (true) {
+            if (const int poll_count = poll(fds.data(), fds.size(), -1); poll_count == -1) {
+                perror("poll");
+                exit(EXIT_FAILURE);
+            }
 
-    while (true) {
-        int poll_count = poll(fds.data(), fds.size(), -1);
-        if (poll_count == -1) {
-            perror("poll");
-            exit(EXIT_FAILURE);
-        }
-
-        // Проверяем события для каждого сокета
-        for (size_t i = 0; i < fds.size(); ++i) {
-            if (fds[i].revents & POLLIN) {
-                // Если событие - новое подключение
-                if (i == 0) {
-                    if (const int clientSocket = accept(server_socket, nullptr, nullptr); clientSocket == -1) {
-                        std::cerr << "Ошибка при принятии нового подключения" << std::endl;
+            // Проверяем события для каждого сокета
+            for (size_t i = 0; i < fds.size(); ++i) {
+                if (fds[i].revents & POLLIN) {
+                    // Если событие - новое подключение
+                    if (i == 0) {
+                        if (const int clientSocket = accept(server_socket, nullptr, nullptr); clientSocket == -1) {
+                            std::cerr << "Ошибка при принятии нового подключения" << std::endl;
+                        } else {
+                            std::cout << "Новый клиент подключен" << std::endl;
+                            fds[clientSocket].fd = clientSocket;
+                            fds[clientSocket].events = POLLIN;
+                        }
                     } else {
-                        std::cout << "Новый клиент подключен" << std::endl;
-                        fds[clientSocket].fd = clientSocket;
-                        fds[clientSocket].events = POLLIN;
+                        // Если событие - данные от клиента
+                        handleClient(&fds[i].fd);
                     }
-                } else {
-                    // Если событие - данные от клиента
-                    handleClient(&fds[i].fd);
                 }
             }
         }
+    }
+
+    if (sr.RUN_TYPE == 2) {
+        // Пулл потоков
+        ThreadPool threadPool;
+
+        while (true) {
+            int clientSocket = accept(server_socket, nullptr, nullptr);
+            if (clientSocket == -1) {
+                std::cerr << "Error accepting connection" << std::endl;
+                continue;
+            }
+
+            // Add client handling task to the thread pool
+            threadPool.addTask(&clientSocket, ServerHandler::handle_client);
+        }
+    }
+
+    if (sr.RUN_TYPE == 3) {
+        // Мультиплексирование с пуллом потоков
+        std::cout << "";
+    } else {
+        std::cout << "Error wrong run type value" << std::endl;
     }
 
     // Закрытие сокета сервера
