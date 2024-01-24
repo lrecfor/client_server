@@ -9,6 +9,7 @@ add_executable(server main.cpp
         server.cpp
         server.h
         ../ConfigHandler.h
+        threadpool.h
 )
 
 target_link_libraries(server config++)

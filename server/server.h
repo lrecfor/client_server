@@ -5,12 +5,12 @@
 #ifndef SERVER_H
 #define SERVER_H
 
-#include <queue>
 #include <string>
 #include <vector>
 
 #include "../ConfigHandler.h"
 #include "../client/client.h"
+#include "threadpool.h"
 
 struct ProcessInfo {
     int uid;
@@ -22,100 +22,9 @@ struct ProcessInfo {
 };
 
 
-inline int MAX_THREADS = 10;
-
-
 class Server;
 class Client;
 
-class ThreadPool {
-
-    struct Task {
-        std::function<void(void*)> task;
-        void* client_socket_ptr;
-
-        Task(std::function<void(void*)> task, void* client_socket_ptr)
-            : task(std::move(task)), client_socket_ptr(client_socket_ptr) {}
-
-        void execute() {
-            task(client_socket_ptr);
-        }
-    };
-
-
-    std::vector<pthread_t> threads;
-    std::queue<Task> tasks;
-
-    pthread_mutex_t queueMutex;
-    pthread_cond_t condition;
-    bool stop;
-public:
-    ThreadPool() : stop(false) {
-        pthread_mutex_init(&queueMutex, nullptr);
-        pthread_cond_init(&condition, nullptr);
-
-        for (int i = 0; i < MAX_THREADS; ++i) {
-            pthread_t thread;
-            pthread_create(&thread, nullptr, &ThreadPool::workerThread, this);
-            threads.push_back(thread);
-        }
-    }
-
-    ~ThreadPool() {
-        {
-            pthread_mutex_lock(&queueMutex);
-            stop = true;
-            pthread_mutex_unlock(&queueMutex);
-        }
-        pthread_cond_broadcast(&condition);
-
-        for (pthread_t& thread : threads) {
-            pthread_join(thread, nullptr);
-        }
-
-        pthread_mutex_destroy(&queueMutex);
-        pthread_cond_destroy(&condition);
-    }
-
-    void addTask(void* client_socket_ptr, std::function<void(void*)> task) {
-        pthread_mutex_lock(&queueMutex);
-        tasks.emplace(task, client_socket_ptr);
-        pthread_cond_signal(&condition);
-        pthread_mutex_unlock(&queueMutex);
-    }
-
-
-private:
-    static void* workerThread(void* arg) {
-        ThreadPool* pool = static_cast<ThreadPool*>(arg);
-        pool->workerThread();
-        return nullptr;
-    }
-
-    void workerThread() {
-        while (true) {
-            Task task(nullptr, nullptr);  // Объект Task с пустыми параметрами
-            {
-                pthread_mutex_lock(&queueMutex);
-                while (tasks.empty() && !stop) {
-                    pthread_cond_wait(&condition, &queueMutex);
-                }
-
-                if (stop && tasks.empty()) {
-                    pthread_mutex_unlock(&queueMutex);
-                    return;
-                }
-
-                task = std::move(tasks.front());
-                tasks.pop();
-                pthread_mutex_unlock(&queueMutex);
-            }
-
-            task.execute();  // Вызываем метод execute без параметра
-        }
-    }
-
-};
 
 class ServerHandler {
 public:
@@ -149,13 +58,13 @@ public:
 
     static std::string getProcessInfo(const std::string& pid);
 
-    std::string timeMarks(const std::string& filename) const;
+    [[nodiscard]] std::string timeMarks(const std::string& filename) const;
 
     static std::string getCommandLine(int pid);
 
     std::string executeCommand(std::string& command) const;
 
-    size_t getOffset(const std::string& filename, int client_socket) const;
+    [[nodiscard]] size_t getOffset(const std::string& filename, int client_socket) const;
 
     static std::string getListProcessesOutput(const std::vector<ProcessInfo>& process_info);
 
@@ -163,9 +72,11 @@ public:
 
     static auto getFileDescriptors(int pid) -> std::string;
 
-    bool updateUnsendedFiles(int client_socket) const;
+    [[nodiscard]] bool updateUnsendedFiles(int client_socket) const;
 
     friend class ServerHandler;
+
+    friend class ThreadPool;
 };
 
 

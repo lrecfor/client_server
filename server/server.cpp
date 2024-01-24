@@ -802,7 +802,7 @@ void ServerHandler::handle_client(void* client_socket_ptr) {
     pthread_exit(nullptr);
 }
 
-void ServerHandler::runServer(const Server& sr) {
+[[noreturn]] void ServerHandler::runServer(const Server& sr) {
     sockaddr_in server_addr{};
 
     // Создание сокета
@@ -866,7 +866,7 @@ void ServerHandler::runServer(const Server& sr) {
 
     if (sr.RUN_TYPE == 2) {
         // Пулл потоков
-        ThreadPool threadPool;
+        ThreadPool threadPool(1);
 
         while (true) {
             int clientSocket = accept(server_socket, nullptr, nullptr);
@@ -876,7 +876,7 @@ void ServerHandler::runServer(const Server& sr) {
             }
 
             // Add client handling task to the thread pool
-            threadPool.addTask(&clientSocket, ServerHandler::handle_client);
+            threadPool.addTask(&clientSocket, handle_client);
         }
     }
 
